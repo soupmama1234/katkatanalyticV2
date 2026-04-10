@@ -1,0 +1,61 @@
+:root {
+  --bg: #000;
+  --surface: #121212;
+  --surface2: #1a1a1a;
+  --border: #222;
+  --border2: #2a2a2a;
+  --primary: #FF9F0A;
+  --success: #32D74B;
+  --danger: #FF453A;
+  --blue: #0A84FF;
+  --text: #fff;
+  --dim: #8E8E93;
+  --pos: #ffffff;
+  --grab: #00B14F;
+  --lineman: #00A84F;
+  --shopee: #EE4D2D;
+
+  font-family: 'IBM Plex Sans Thai', system-ui, sans-serif;
+  line-height: 1.5;
+  color-scheme: dark;
+  color: var(--text);
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, select, textarea {
+  font-family: inherit;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fadeIn 0.2s ease; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
