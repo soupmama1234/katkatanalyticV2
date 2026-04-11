@@ -110,15 +110,19 @@ function ExpenseForm({ expenses, setExpenses }) {
         reader.onload = () => {
           const img = new Image()
           img.onload = () => {
-            const MAX = 2560
+            // ลด size ลงเพื่อความเร็ว — OCR ไม่ต้องการความละเอียดสูง
+            const MAX = 1600
             let w = img.width, h = img.height
-            if (w > MAX || h > MAX) { if (w > h) { h = Math.round(h * MAX / w); w = MAX } else { w = Math.round(w * MAX / h); h = MAX } }
+            if (w > MAX || h > MAX) {
+              if (w > h) { h = Math.round(h * MAX / w); w = MAX }
+              else { w = Math.round(w * MAX / h); h = MAX }
+            }
             const canvas = document.createElement('canvas')
             canvas.width = w; canvas.height = h
             const ctx = canvas.getContext('2d')
-            ctx.filter = 'contrast(1.15) brightness(1.05)'
+            ctx.filter = 'contrast(1.2) brightness(1.05)'
             ctx.drawImage(img, 0, 0, w, h)
-            res(canvas.toDataURL('image/jpeg', 0.92).split(',')[1])
+            res(canvas.toDataURL('image/jpeg', 0.80).split(',')[1])
           }
           img.onerror = rej
           img.src = reader.result
@@ -129,8 +133,8 @@ function ExpenseForm({ expenses, setExpenses }) {
       const knownItems = itemHistory.slice(0, 40).join(', ')
       const prompt = `คุณคือระบบอ่านใบเสร็จสำหรับร้านอาหาร${knownItems ? '\nรายการที่เคยซื้อ: ' + knownItems : ''}
 return JSON array เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown
-format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"unit":"หน่วย","amount":ราคารวม,"vendor":"ชื่อร้าน","date":"YYYY-MM-DD"}]
-กฎ: item ตรงหรือใกล้เคียงรายการในระบบให้ใช้ชื่อนั้น, quantity เป็นตัวเลข, amount เป็นตัวเลขไม่มีสัญลักษณ์, date YYYY-MM-DD หรือ null`
+format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"unit":"หน่วย","amount":ราคารวมก่อนหักส่วนลด,"discount":ส่วนลดเป็นตัวเลข,"vendor":"ชื่อร้าน","date":"YYYY-MM-DD"}]
+กฎ: item ตรงหรือใกล้เคียงรายการในระบบให้ใช้ชื่อนั้น, quantity/amount/discount เป็นตัวเลขไม่มีสัญลักษณ์, discount=0 ถ้าไม่มี, date YYYY-MM-DD หรือ null`
 
       const resp = await fetch('/api/gemini', {
         method: 'POST',
@@ -142,7 +146,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         }),
       })
       const result = await resp.json()
-      if (!resp.ok) throw new Error(result.error?.message || 'API error')
+      if (!resp.ok) throw new Error(result.error || 'API error')
       const raw = result.candidates?.[0]?.content?.parts?.[0]?.text || '[]'
       const items = JSON.parse(raw.replace(/```json|```/g, '').trim())
       if (!items.length) return alert('ไม่พบรายการในรูปนี้')
@@ -150,6 +154,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         ...it,
         id: i,
         category: guessExpCategory(it.item || ''),
+        discount: it.discount || 0,
         ppu: it.quantity && it.amount ? Math.round(it.amount / it.quantity * 100) / 100 : '',
       })))
       setOcrChecked(items.map((_, i) => i))
@@ -167,7 +172,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         quantity: parseFloat(it.quantity) || null,
         unit: it.unit || null,
         price_per_unit: parseFloat(it.ppu) || null,
-        amount: parseFloat(it.amount) || 0,
+        amount: Math.max(0, (parseFloat(it.amount) || 0) - (parseFloat(it.discount) || 0)),
         vendor: it.vendor || null,
         note: 'ocr',
       })).filter(it => it.amount > 0)
@@ -183,25 +188,54 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
   return (
     <div>
 
-      {/* OCR */}
+      {/* OCR — 2 ปุ่ม: ถ่ายตอนนี้ + เลือกจากคลัง */}
       <div style={{ marginBottom: 14 }}>
-        <label style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          background: ocrLoading ? '#1a1a2e' : 'linear-gradient(135deg,#1a1a2e,#16213e)',
-          border: '1px solid #4D96FF44', borderRadius: 14, padding: '14px',
-          color: ocrLoading ? '#888' : '#4D96FF', fontWeight: 700, fontSize: 14,
-          cursor: ocrLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-        }}>
-          <span style={{ fontSize: 20 }}>📷</span>
-          {ocrLoading ? '⏳ กำลังอ่านใบเสร็จ...' : 'ถ่ายรูป / เลือกรูปใบเสร็จ (OCR)'}
-          {!ocrLoading && <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleOCR(e.target.files[0])} />}
-        </label>
+        {ocrLoading ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            background: '#1a1a2e', border: '1px solid #4D96FF44', borderRadius: 14, padding: '14px',
+            color: '#888', fontWeight: 700, fontSize: 14,
+          }}>
+            ⏳ กำลังอ่านใบเสร็จ...
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {/* ปุ่ม 1: เปิดกล้องโดยตรง */}
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              background: 'linear-gradient(135deg,#1a2e1a,#162e16)', border: '1px solid #4caf5044',
+              borderRadius: 14, padding: '14px', color: '#4caf50', fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              📷 ถ่ายเลย
+              <input type="file" accept="image/*" capture="environment"
+                style={{ display: 'none' }} onChange={e => handleOCR(e.target.files[0])} />
+            </label>
+            {/* ปุ่ม 2: เลือกจากคลังรูป */}
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              background: 'linear-gradient(135deg,#1a1a2e,#16213e)', border: '1px solid #4D96FF44',
+              borderRadius: 14, padding: '14px', color: '#4D96FF', fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              🖼️ คลังรูป
+              <input type="file" accept="image/*"
+                style={{ display: 'none' }} onChange={e => handleOCR(e.target.files[0])} />
+            </label>
+          </div>
+        )}
       </div>
 
       {/* OCR results */}
       {ocrItems.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid #4D96FF33', borderRadius: 16, padding: 14, marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#4D96FF', marginBottom: 12 }}>✨ พบ {ocrItems.length} รายการ</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#4D96FF' }}>✨ พบ {ocrItems.length} รายการ</div>
+            <button onClick={() => { setOcrItems([]); setOcrChecked([]) }}
+              style={{ background: 'none', border: '1px solid #ff453a44', borderRadius: 8, padding: '4px 10px', color: '#FF453A', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ✕ ยกเลิก
+            </button>
+          </div>
           {ocrItems.map((it, i) => (
             <div key={i} style={{ borderBottom: '1px solid var(--border2)', paddingBottom: 10, marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -225,11 +259,20 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                 ))}
               </div>
               <div style={{ paddingLeft: 26, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 10, color: 'var(--dim)' }}>ยอดรวม ฿</span>
+                <span style={{ fontSize: 10, color: 'var(--dim)' }}>ยอด ฿</span>
                 <input type="number" value={it.amount ?? ''} onChange={e => setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))}
                   style={{ ...INPUT, flex: 1, fontSize: 14, fontWeight: 800, color: 'var(--success)', padding: '6px 8px' }} />
-                {it.vendor && <span style={{ fontSize: 10, color: 'var(--dim)' }}>{it.vendor}</span>}
+                <span style={{ fontSize: 10, color: 'var(--dim)' }}>ลด ฿</span>
+                <input type="number" value={it.discount ?? 0} onChange={e => setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, discount: e.target.value } : x))}
+                  style={{ ...INPUT, width: 60, fontSize: 13, fontWeight: 700, color: '#FF9F0A', padding: '6px 8px', textAlign: 'center' }} />
+                {it.vendor && <span style={{ fontSize: 10, color: 'var(--dim)', flexShrink: 0 }}>{it.vendor}</span>}
               </div>
+              {/* net amount preview */}
+              {(parseFloat(it.discount) > 0) && (
+                <div style={{ paddingLeft: 26, marginTop: 4, fontSize: 11, color: 'var(--success)' }}>
+                  สุทธิ ฿{Math.max(0, (parseFloat(it.amount) || 0) - (parseFloat(it.discount) || 0)).toFixed(2)}
+                </div>
+              )}
             </div>
           ))}
           <button onClick={saveOcrItems}
