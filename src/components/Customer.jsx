@@ -2,13 +2,7 @@ import { useState, useMemo } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import PeriodBar from './ui/PeriodBar.jsx'
 import { filterByPeriod, filterByRange, fmt, todayStr } from '../utils/helpers.js'
-
-const PERIOD_OPTIONS = [
-  { key: 'today', label: 'วันนี้' },
-  { key: '7d',    label: '7 วัน' },
-  { key: '30d',   label: '30 วัน' },
-  { key: 'all',   label: 'ทั้งหมด' },
-]
+import { STANDARD_PERIODS } from '../utils/constants.js'
 
 const CUST_TABS = ['ภาพรวม', 'ลูกค้าใหม่', 'ลูกค้าประจำ']
 const TIP = { contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 }, labelStyle: { color: '#fff' } }
@@ -39,7 +33,7 @@ export default function Customer({ allOrders }) {
 
   return (
     <div style={{ padding: '0 0 20px' }}>
-      <PeriodBar period={period} onChange={setPeriod} options={PERIOD_OPTIONS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+      <PeriodBar period={period} onChange={setPeriod} options={STANDARD_PERIODS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
       {/* sub tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>

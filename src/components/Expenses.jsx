@@ -5,15 +5,8 @@ import {
   filterExpByPeriod, filterExpByRange, filterByPeriod, filterByRange,
   fmt, todayStr, guessExpCategory, exportCSV
 } from '../utils/helpers.js'
-import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR } from '../utils/constants.js'
+import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
-
-const PERIOD_OPTIONS = [
-  { key: 'today', label: 'วันนี้' },
-  { key: '7d',    label: '7 วัน' },
-  { key: '30d',   label: 'เดือนนี้' },
-  { key: 'all',   label: 'ทั้งหมด' },
-]
 
 const TABS = ['บันทึก', 'รายการ', 'วิเคราะห์', 'Action', 'Backup']
 
@@ -422,7 +415,7 @@ function ExpenseList({ expenses, setExpenses }) {
 
   return (
     <div>
-      <PeriodBar period={period} onChange={setPeriod} options={PERIOD_OPTIONS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+      <PeriodBar period={period} onChange={setPeriod} options={EXP_PERIODS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 ค้นหา..."
         style={{ ...INPUT, marginBottom: 12 }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -488,20 +481,12 @@ function ExpenseAnalysis({ expenses, allOrders }) {
   const [from, setFrom]     = useState(todayStr)
   const [to, setTo]         = useState(todayStr)
 
-  const ANA_PERIOD_OPTIONS = [
-    { key: '30d', label: 'เดือนนี้' },
-    { key: '6m',  label: '6 เดือน' },
-    { key: '1y',  label: '1 ปี' },
-    { key: 'all', label: 'ทั้งหมด' },
-  ]
-
   const expFiltered = useMemo(() =>
     period === 'custom' ? filterExpByRange(expenses, from, to) : filterExpByPeriod(expenses, period),
     [expenses, period, from, to]
   )
   const ordFiltered = useMemo(() => {
-    const map = { '30d': '30d', '6m': '6m', '1y': '1y', 'all': 'all' }
-    return period === 'custom' ? filterByRange(allOrders, from, to) : filterByPeriod(allOrders, map[period] || 'all')
+    return period === 'custom' ? filterByRange(allOrders, from, to) : filterByPeriod(allOrders, period)
   }, [allOrders, period, from, to])
 
   const totalRev  = ordFiltered.reduce((s, r) => s + (r.actual_amount || 0), 0)
@@ -535,7 +520,7 @@ function ExpenseAnalysis({ expenses, allOrders }) {
 
   return (
     <div>
-      <PeriodBar period={period} onChange={setPeriod} options={ANA_PERIOD_OPTIONS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+      <PeriodBar period={period} onChange={setPeriod} options={EXP_PERIODS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
       {/* Profit card */}
       <div style={{ background: profit >= 0 ? 'rgba(50,215,75,0.1)' : 'rgba(255,69,58,0.1)', border: `1px solid ${profit >= 0 ? 'rgba(50,215,75,0.3)' : 'rgba(255,69,58,0.3)'}`, borderRadius: 18, padding: 20, marginBottom: 12, textAlign: 'center' }}>

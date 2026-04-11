@@ -1,15 +1,8 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../supabase.js'
 import { filterExpByPeriod, filterExpByRange, fmt, todayStr } from '../utils/helpers.js'
-import { INC_CATS, UNIT_PRESETS } from '../utils/constants.js'
+import { INC_CATS, UNIT_PRESETS, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
-
-const PERIOD_OPTIONS = [
-  { key: 'today', label: 'วันนี้' },
-  { key: '7d',    label: '7 วัน' },
-  { key: '30d',   label: 'เดือนนี้' },
-  { key: 'all',   label: 'ทั้งหมด' },
-]
 
 const INPUT = {
   background: 'var(--surface2)', border: '1px solid var(--border2)',
@@ -171,7 +164,7 @@ function IncomeList({ income, setIncome }) {
 
   return (
     <div>
-      <PeriodBar period={period} onChange={setPeriod} options={PERIOD_OPTIONS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+      <PeriodBar period={period} onChange={setPeriod} options={EXP_PERIODS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
         <div style={MINI}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รายได้อื่นรวม</div><div style={{ color: 'var(--success)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>฿{fmt(total)}</div></div>

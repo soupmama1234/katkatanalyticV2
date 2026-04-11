@@ -6,20 +6,7 @@ import {
 import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
 import { filterByPeriod, filterByRange, computeStats, fmt, todayStr } from '../utils/helpers.js'
-import { CH_COLOR } from '../utils/constants.js'
-
-const PERIOD_OPTIONS = [
-  { key: '7d',  label: '7 วัน' },
-  { key: '30d', label: '1 เดือน' },
-  { key: '1y',  label: '1 ปี' },
-]
-
-const PEAK_PERIOD_OPTIONS = [
-  { key: 'all',  label: 'ทั้งหมด' },
-  { key: 'today', label: 'วันนี้' },
-  { key: 'week',  label: 'สัปดาห์นี้' },
-  { key: '30d',   label: 'เดือนนี้' },
-]
+import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
 const TIP = {
   contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 },
@@ -114,7 +101,7 @@ function TrendTab({ allOrders }) {
 
   return (
     <div>
-      <PeriodBar period={period} onChange={setPeriod} options={PERIOD_OPTIONS}
+      <PeriodBar period={period} onChange={setPeriod} options={STANDARD_PERIODS}
         from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
@@ -244,7 +231,7 @@ function PeakTab({ allOrders }) {
 
   return (
     <div>
-      <PeriodBar period={period} onChange={setPeriod} options={PEAK_PERIOD_OPTIONS}
+      <PeriodBar period={period} onChange={setPeriod} options={STANDARD_PERIODS}
         from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
       {/* Hour bar chart */}

@@ -6,16 +6,9 @@ import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
 import {
   filterByPeriod, filterByRange, computeStats,
-  getOrderItems, fmt, todayStr, periodLabel
+  getOrderItems, fmt, todayStr
 } from '../utils/helpers.js'
-import { CH_COLOR } from '../utils/constants.js'
-
-const PERIOD_OPTIONS = [
-  { key: 'today', label: 'วันนี้' },
-  { key: '7d',    label: '7 วัน' },
-  { key: '30d',   label: '30 วัน' },
-  { key: 'all',   label: 'ทั้งหมด' },
-]
+import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
 export default function Overview({ allOrders }) {
   const [period, setPeriod] = useState('today')
@@ -84,7 +77,7 @@ export default function Overview({ allOrders }) {
     <div style={S.page}>
       <PeriodBar
         period={period} onChange={setPeriod}
-        options={PERIOD_OPTIONS}
+        options={STANDARD_PERIODS}
         from={from} to={to}
         onFromChange={setFrom} onToChange={setTo}
       />
