@@ -44,3 +44,22 @@ export const ACTION_CAT_COLOR = {
   menu: '#4caf50',
   ops: '#4D96FF',
 }
+// ── Standard period options ใช้ร่วมกันทุกหน้า ──────────────────────────────
+export const STANDARD_PERIODS = [
+  { key: 'today',     label: 'วันนี้'   },
+  { key: 'yesterday', label: 'เมื่อวาน' },
+  { key: '7d',        label: '7 วัน'   },
+  { key: '30d',       label: '1 เดือน' },
+  { key: '1y',        label: '1 ปี'    },
+  { key: 'all',       label: 'ทั้งหมด' },
+]
+
+// period options สำหรับ expenses (ไม่มี 1y เพราะ date-based ไม่ใช่ created_at)
+export const EXP_PERIODS = [
+  { key: 'today',     label: 'วันนี้'   },
+  { key: 'yesterday', label: 'เมื่อวาน' },
+  { key: '7d',        label: '7 วัน'   },
+  { key: '30d',       label: '1 เดือน' },
+  { key: '1y',        label: '1 ปี'    },
+  { key: 'all',       label: 'ทั้งหมด' },
+]

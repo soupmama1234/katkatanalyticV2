@@ -27,12 +27,17 @@ export function filterByPeriod(orders, period) {
     return new Date(s).toLocaleDateString('en-CA')
   }
   if (period === 'today') return orders.filter(r => toLocalDate(r) === todayStr)
+  if (period === 'yesterday') {
+    const y = new Date(now); y.setDate(y.getDate() - 1)
+    const yStr = y.toLocaleDateString('en-CA')
+    return orders.filter(r => toLocalDate(r) === yStr)
+  }
   if (period === '7d') {
     const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(0, 0, 0, 0)
     return orders.filter(r => new Date(r.created_at) >= d)
   }
   if (period === '30d' || period === 'month') {
-    const d = new Date(now.getFullYear(), now.getMonth(), 1)
+    const d = new Date(now); d.setDate(d.getDate() - 30); d.setHours(0, 0, 0, 0)
     return orders.filter(r => new Date(r.created_at) >= d)
   }
   if (period === '6m') {
@@ -43,12 +48,7 @@ export function filterByPeriod(orders, period) {
     const d = new Date(now); d.setFullYear(d.getFullYear() - 1); d.setHours(0, 0, 0, 0)
     return orders.filter(r => new Date(r.created_at) >= d)
   }
-  if (period === 'week') {
-    const d = new Date(now)
-    const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day
-    d.setDate(d.getDate() + diff); d.setHours(0, 0, 0, 0)
-    return orders.filter(r => new Date(r.created_at) >= d)
-  }
+  // 'all' — return everything
   return orders
 }
 
@@ -61,6 +61,10 @@ export function filterByRange(arr, from, to) {
 export function filterExpByPeriod(rows, period) {
   const now = new Date()
   if (period === 'today') return rows.filter(r => r.date === todayStr)
+  if (period === 'yesterday') {
+    const y = new Date(now); y.setDate(y.getDate() - 1)
+    return rows.filter(r => r.date === y.toLocaleDateString('en-CA'))
+  }
   if (period === '7d') {
     const d = new Date(now); d.setDate(d.getDate() - 7)
     return rows.filter(r => r.date && r.date >= d.toLocaleDateString('en-CA'))
