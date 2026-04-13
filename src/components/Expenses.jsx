@@ -52,6 +52,7 @@ function ExpenseForm({ expenses, setExpenses }) {
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrItems, setOcrItems] = useState([])
   const [ocrChecked, setOcrChecked] = useState([])
+  const [suggOpen, setSuggOpen] = useState(null) // index ของ row ที่เปิด dropdown
 
   const itemHistory   = useMemo(() => [...new Set(expenses.map(e => e.item).filter(Boolean))], [expenses])
   const vendorHistory = useMemo(() => [...new Set([...VENDORS, ...expenses.map(e => e.vendor).filter(Boolean)])], [expenses])
@@ -178,6 +179,20 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
     alert(`✅ บันทึก ${toSave.length} รายการแล้ว`)
   }
 
+  // fuzzy match — หา suggestions จาก itemHistory ตาม keyword
+  const getSuggestions = (keyword) => {
+    if (!keyword || keyword.length < 1) return []
+    const kw = keyword.toLowerCase().replace(/\s+/g, '')
+    return itemHistory
+      .filter(name => {
+        const n = name.toLowerCase().replace(/\s+/g, '')
+        // exact substring หรือ character overlap สูง
+        return n.includes(kw) || kw.includes(n) ||
+          [...kw].filter(c => n.includes(c)).length >= Math.ceil(kw.length * 0.6)
+      })
+      .slice(0, 6)
+  }
+
   return (
     <div>
 
@@ -235,8 +250,69 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                 <input type="checkbox" checked={ocrChecked.includes(i)}
                   onChange={e => setOcrChecked(prev => e.target.checked ? [...prev, i] : prev.filter(x => x !== i))}
                   style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#4D96FF' }} />
-                <input value={it.editItem ?? it.item} onChange={e => setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, editItem: e.target.value } : x))}
-                  style={{ ...INPUT, flex: 1, fontSize: 13, fontWeight: 700, padding: '6px 10px' }} />
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <input
+                    value={it.editItem ?? it.item}
+                    onChange={e => {
+                      setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, editItem: e.target.value } : x))
+                      setSuggOpen(i)
+                    }}
+                    onFocus={() => setSuggOpen(i)}
+                    onBlur={() => setTimeout(() => setSuggOpen(null), 150)}
+                    style={{ ...INPUT, width: '100%', fontSize: 13, fontWeight: 700, padding: '6px 10px' }}
+                  />
+                  {/* Suggestion dropdown */}
+                  {suggOpen === i && (() => {
+                    const suggs = getSuggestions(it.editItem ?? it.item)
+                    if (!suggs.length) return null
+                    return (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                        background: '#1e1e1e', border: '1px solid #4D96FF44',
+                        borderRadius: 10, marginTop: 4, overflow: 'hidden',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                      }}>
+                        <div style={{ padding: '6px 10px', fontSize: 9, color: '#4D96FF', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border2)' }}>
+                          📌 รายการในระบบ
+                        </div>
+                        {suggs.map((name, si) => (
+                          <div
+                            key={si}
+                            onMouseDown={() => {
+                              setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, editItem: name, category: guessExpCategory(name) } : x))
+                              setSuggOpen(null)
+                            }}
+                            style={{
+                              padding: '9px 12px', fontSize: 13, cursor: 'pointer',
+                              color: '#fff', borderBottom: '1px solid var(--border2)',
+                              display: 'flex', alignItems: 'center', gap: 8,
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#2a2a2a'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <span style={{ fontSize: 14 }}>📌</span>
+                            <span style={{ flex: 1 }}>{name}</span>
+                            {name !== (it.editItem ?? it.item) && (
+                              <span style={{ fontSize: 10, color: 'var(--dim)' }}>แทนที่</span>
+                            )}
+                          </div>
+                        ))}
+                        <div
+                          onMouseDown={() => setSuggOpen(null)}
+                          style={{
+                            padding: '8px 12px', fontSize: 12, cursor: 'pointer',
+                            color: '#4D96FF', display: 'flex', alignItems: 'center', gap: 6,
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#1a1a2e'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <span>✏️</span>
+                          <span>ใช้ "{it.editItem ?? it.item}"</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
                 <select value={it.category} onChange={e => setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, category: e.target.value } : x))}
                   style={{ ...INPUT, width: 'auto', fontSize: 11, padding: '6px 8px' }}>
                   {EXP_CATS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.key}</option>)}
