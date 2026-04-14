@@ -53,17 +53,27 @@ function ExpenseForm({ expenses, setExpenses }) {
   const [ocrItems, setOcrItems] = useState([])
   const [ocrChecked, setOcrChecked] = useState([])
   const [suggOpen, setSuggOpen] = useState(null) // index ของ row ที่เปิด dropdown
+  const [userSetCat, setUserSetCat] = useState(false) // true = user เลือกหมวดเองแล้ว ไม่ auto-override
 
   const itemHistory   = useMemo(() => [...new Set(expenses.map(e => e.item).filter(Boolean))], [expenses])
   const vendorHistory = useMemo(() => [...new Set([...VENDORS, ...expenses.map(e => e.vendor).filter(Boolean)])], [expenses])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const calcTotal = (qty, ppu, disc) => {
+  // 2-way calculation
+  // direction: 'ppu' = qty+amount→ppu, 'amount' = qty+ppu→amount
+  const calcAuto = (qty, ppu, amount, disc, direction) => {
     const q = parseFloat(qty) || 0
     const p = parseFloat(ppu) || 0
+    const a = parseFloat(amount) || 0
     const d = parseFloat(disc) || 0
-    if (q > 0 && p > 0) set('amount', Math.max(0, q * p - d).toFixed(2))
+    if (direction === 'amount' && q > 0 && p > 0) {
+      // qty + ppu → amount
+      set('amount', Math.max(0, q * p - d).toFixed(2))
+    } else if (direction === 'ppu' && q > 0 && a > 0) {
+      // qty + amount → ppu
+      set('pricePerUnit', ((a + d) / q).toFixed(2))
+    }
   }
 
   const handleSubmit = async () => {
@@ -89,6 +99,7 @@ function ExpenseForm({ expenses, setExpenses }) {
       if (error) throw error
       setExpenses(prev => [data, ...prev])
       setForm(emptyForm)
+      setUserSetCat(false)
     } catch (e) { alert('❌ ' + e.message) }
     setSaving(false)
   }
@@ -362,19 +373,27 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         <Field label="หมวดหมู่">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {EXP_CATS.map(c => (
-              <button key={c.key} onClick={() => set('category', c.key)} style={{
+              <button key={c.key} onClick={() => { set('category', c.key); setUserSetCat(true) }} style={{
                 padding: '6px 10px', borderRadius: 10, border: `1px solid ${form.category === c.key ? c.color : 'var(--border2)'}`,
                 background: form.category === c.key ? c.color : 'var(--surface2)',
                 color: form.category === c.key ? '#000' : 'var(--dim)',
                 fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: form.category === c.key ? 700 : 400,
-              }}>{c.icon} {c.key}</button>
+              }} onClick={() => { set('category', c.key); setUserSetCat(true) }}>{c.icon} {c.key}</button>
             ))}
           </div>
         </Field>
 
         <Field label="รายการ">
           <AutoComplete
-            value={form.item} onChange={v => set('item', v)}
+            value={form.item}
+            onChange={v => {
+              set('item', v)
+              // auto-suggest category ถ้า user ยังไม่ได้เลือกเอง
+              if (!userSetCat && v.length >= 2) {
+                const guessed = guessExpCategory(v)
+                if (guessed) set('category', guessed)
+              }
+            }}
             suggestions={itemHistory} placeholder="เช่น หมูสันนอก"
           />
         </Field>
@@ -382,7 +401,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="จำนวน">
             <input type="number" inputMode="decimal" value={form.quantity}
-              onChange={e => { set('quantity', e.target.value); calcTotal(e.target.value, form.pricePerUnit, form.discount) }}
+              onChange={e => { set('quantity', e.target.value); calcAuto(e.target.value, form.pricePerUnit, form.amount, form.discount, form.pricePerUnit ? 'amount' : 'ppu') }}
               style={INPUT} placeholder="0" />
           </Field>
           <Field label="หน่วย">
@@ -402,19 +421,25 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
 
         <Field label="ราคา/หน่วย ฿">
           <input type="number" inputMode="decimal" value={form.pricePerUnit}
-            onChange={e => { set('pricePerUnit', e.target.value); calcTotal(form.quantity, e.target.value, form.discount) }}
+            onChange={e => { set('pricePerUnit', e.target.value); calcAuto(form.quantity, e.target.value, form.amount, form.discount, 'amount') }}
             style={{ ...INPUT, color: 'var(--primary)', fontWeight: 700, fontSize: 16 }} placeholder="0" />
         </Field>
 
         <Field label="ยอดรวม ฿">
           <input type="number" inputMode="decimal" value={form.amount}
-            onChange={e => set('amount', e.target.value)}
+            onChange={e => {
+              set('amount', e.target.value)
+              // ถ้ามี qty แต่ยังไม่มี ppu → คำนวณ ppu ให้
+              if (form.quantity && !form.pricePerUnit) {
+                calcAuto(form.quantity, form.pricePerUnit, e.target.value, form.discount, 'ppu')
+              }
+            }}
             style={{ ...INPUT, color: 'var(--success)', fontWeight: 800, fontSize: 18 }} placeholder="0" />
         </Field>
 
         <Field label="ส่วนลดท้ายบิล">
           <input type="number" inputMode="decimal" value={form.discount}
-            onChange={e => { set('discount', e.target.value); calcTotal(form.quantity, form.pricePerUnit, e.target.value) }}
+            onChange={e => { set('discount', e.target.value); calcAuto(form.quantity, form.pricePerUnit, form.amount, e.target.value, 'amount') }}
             style={INPUT} placeholder="0" />
         </Field>
 
