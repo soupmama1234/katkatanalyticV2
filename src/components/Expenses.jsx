@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { supabase } from '../supabase.js'
 import {
   filterExpByPeriod, filterExpByRange, filterByPeriod, filterByRange,
@@ -8,7 +8,7 @@ import {
 import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
 
-const TABS = ['บันทึก', 'รายการ', 'วิเคราะห์', 'Action', 'Backup']
+const TABS = ['บันทึก', 'รายการ', 'วิเคราะห์', 'Forecast', 'Action', 'Backup']
 
 const INPUT = {
   background: 'var(--surface2)', border: '1px solid var(--border2)',
@@ -38,6 +38,7 @@ export default function Expenses({ expenses, setExpenses, allOrders, actionNotes
       {tab === 'บันทึก'  && <ExpenseForm expenses={expenses} setExpenses={setExpenses} />}
       {tab === 'รายการ'  && <ExpenseList expenses={expenses} setExpenses={setExpenses} />}
       {tab === 'วิเคราะห์' && <ExpenseAnalysis expenses={expenses} allOrders={allOrders} />}
+      {tab === 'Forecast' && <Forecast expenses={expenses} />}
       {tab === 'Action'  && <ActionNotes actionNotes={actionNotes} setActionNotes={setActionNotes} />}
       {tab === 'Backup'  && <Backup allOrders={allOrders} />}
     </div>
@@ -792,6 +793,277 @@ function ActionNotes({ actionNotes, setActionNotes }) {
 }
 
 // ─── BACKUP ──────────────────────────────────────────────────────────────────
+// ─── FORECAST ─────────────────────────────────────────────────────────────────
+function Forecast({ expenses }) {
+  // ดึงเฉพาะ 3 เดือนล่าสุด (ไม่รวมเดือนปัจจุบัน)
+  const now = new Date()
+
+  const data = useMemo(() => {
+    // สร้าง map รายเดือน: { 'YYYY-MM': { total, byCategory, byItem } }
+    const monthMap = {}
+
+    expenses.forEach(e => {
+      if (!e.date || !e.amount) return
+      const month = e.date.slice(0, 7)
+      if (!monthMap[month]) monthMap[month] = { total: 0, byCategory: {}, byItem: {} }
+      const amt = parseFloat(e.amount) || 0
+      monthMap[month].total += amt
+
+      const cat = e.category || 'อื่นๆ'
+      monthMap[month].byCategory[cat] = (monthMap[month].byCategory[cat] || 0) + amt
+
+      const item = e.item || 'ไม่ระบุ'
+      if (!monthMap[month].byItem[item]) monthMap[month].byItem[item] = { total: 0, count: 0 }
+      monthMap[month].byItem[item].total += amt
+      monthMap[month].byItem[item].count += 1
+    })
+
+    // เรียง months และเอา 6 เดือนล่าสุด
+    const sortedMonths = Object.keys(monthMap).sort()
+    const last6 = sortedMonths.slice(-6)
+    const last3 = sortedMonths.slice(-3)
+
+    // คำนวณ average รายหมวดจาก 3 เดือนล่าสุด
+    const catForecast = {}
+    last3.forEach(m => {
+      Object.entries(monthMap[m].byCategory).forEach(([cat, amt]) => {
+        if (!catForecast[cat]) catForecast[cat] = []
+        catForecast[cat].push(amt)
+      })
+    })
+
+    // forecast รายหมวด = weighted average (เดือนล่าสุดหนักกว่า)
+    const catPrediction = {}
+    Object.entries(catForecast).forEach(([cat, vals]) => {
+      if (vals.length === 1) catPrediction[cat] = vals[0]
+      else if (vals.length === 2) catPrediction[cat] = vals[0] * 0.4 + vals[1] * 0.6
+      else catPrediction[cat] = vals[0] * 0.2 + vals[1] * 0.35 + vals[2] * 0.45
+    })
+
+    // trend รายหมวด: เปรียบเทียบ เดือนล่าสุด vs เฉลี่ย 3 เดือน
+    const catTrend = {}
+    const lastMonth = last3[last3.length - 1]
+    if (lastMonth) {
+      Object.entries(catPrediction).forEach(([cat, pred]) => {
+        const last = monthMap[lastMonth]?.byCategory[cat] || 0
+        catTrend[cat] = pred > 0 ? Math.round((last - pred) / pred * 100) : 0
+      })
+    }
+
+    // top items forecast
+    const itemForecast = {}
+    last3.forEach(m => {
+      Object.entries(monthMap[m].byItem).forEach(([item, d]) => {
+        if (!itemForecast[item]) itemForecast[item] = []
+        itemForecast[item].push(d.total)
+      })
+    })
+    const topItemPrediction = Object.entries(itemForecast)
+      .map(([item, vals]) => {
+        const avg = vals.reduce((s, v) => s + v, 0) / vals.length
+        const pred = vals.length >= 2
+          ? (vals.length === 2 ? vals[0] * 0.4 + vals[1] * 0.6 : vals[0] * 0.2 + vals[1] * 0.35 + vals[2] * 0.45)
+          : avg
+        const trend = vals.length >= 2 ? Math.round((vals[vals.length - 1] - vals[0]) / vals[0] * 100) : 0
+        return { item, pred, trend, months: vals.length }
+      })
+      .sort((a, b) => b.pred - a.pred)
+      .slice(0, 10)
+
+    // total forecast
+    const totalForecast = Object.values(catPrediction).reduce((s, v) => s + v, 0)
+
+    // chart data: monthly total 6 เดือน + forecast
+    const chartData = last6.map(m => ({
+      label: new Date(m + '-01').toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }),
+      actual: Math.round(monthMap[m].total),
+    }))
+
+    // เดือนถัดไป
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextLabel = nextMonth.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' })
+    chartData.push({ label: nextLabel, forecast: Math.round(totalForecast) })
+
+    // เดือนปัจจุบัน (ยังไม่จบ)
+    const currentMonth = now.toISOString().slice(0, 7)
+    const currentTotal = monthMap[currentMonth]?.total || 0
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const daysPassed = now.getDate()
+    const currentProjected = daysPassed > 0 ? Math.round(currentTotal / daysPassed * daysInMonth) : 0
+
+    return {
+      catPrediction, catTrend, topItemPrediction,
+      totalForecast: Math.round(totalForecast),
+      chartData, currentTotal, currentProjected,
+      lastMonth, monthMap, last3,
+    }
+  }, [expenses, now])
+
+  const TIP = {
+    contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 },
+    labelStyle: { color: '#fff' },
+  }
+
+  const nextMonthName = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    .toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
+
+  if (expenses.length < 10) return (
+    <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--dim)' }}>
+      <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
+      <div style={{ fontSize: 14 }}>ต้องการข้อมูลอย่างน้อย 1 เดือนเพื่อทำ Forecast</div>
+      <div style={{ fontSize: 12, marginTop: 8 }}>กรอกต้นทุนในแท็บ "บันทึก" ก่อนนะครับ</div>
+    </div>
+  )
+
+  return (
+    <div style={{ padding: '0 0 20px' }}>
+
+      {/* Hero forecast card */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1a1a0a, #2a2000)',
+        border: '1px solid var(--primary)44',
+        borderRadius: 20, padding: '20px', marginBottom: 14, textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          🔮 Forecast — {nextMonthName}
+        </div>
+        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 36, fontWeight: 900, color: 'var(--primary)' }}>
+          ฿{fmt(data.totalForecast)}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6 }}>
+          คาดการณ์ต้นทุนรวมเดือนหน้า
+        </div>
+
+        {/* เดือนปัจจุบัน */}
+        {data.currentProjected > 0 && (
+          <div style={{
+            marginTop: 14, padding: '10px 16px',
+            background: 'rgba(255,255,255,0.05)', borderRadius: 12,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <div style={{ fontSize: 12, color: 'var(--dim)' }}>เดือนนี้ (ประมาณการเต็มเดือน)</div>
+            <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, color: '#fff' }}>
+              ฿{fmt(data.currentProjected)}
+              <span style={{ fontSize: 10, color: 'var(--dim)', marginLeft: 6 }}>
+                (บันทึกแล้ว ฿{fmt(data.currentTotal)})
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Trend chart */}
+      <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          📈 แนวโน้มต้นทุน 6 เดือน + Forecast
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={data.chartData} margin={{ left: -10, right: 10 }}>
+            <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 10 }} />
+            <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+            <Tooltip {...TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'actual' ? 'จริง' : 'Forecast']} />
+            <Line type="monotone" dataKey="actual" stroke="var(--primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+            <Line type="monotone" dataKey="forecast" stroke="#4D96FF" strokeWidth={2}
+              strokeDasharray="5 4" dot={{ r: 5, fill: '#4D96FF' }} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+        <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 8 }}>
+          {[['var(--primary)', 'จริง'], ['#4D96FF', 'Forecast (ประมาณการ)']].map(([color, label]) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 16, height: 2, background: color, borderRadius: 1 }} />
+              <span style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Forecast รายหมวด */}
+      <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          📂 Forecast แยกหมวดหมู่
+        </div>
+        {Object.entries(data.catPrediction)
+          .sort((a, b) => b[1] - a[1])
+          .map(([cat, pred]) => {
+            const trend = data.catTrend[cat] || 0
+            const catInfo = EXP_CATS.find(c => c.key === cat)
+            const maxPred = Math.max(...Object.values(data.catPrediction))
+            const pct = maxPred > 0 ? Math.round(pred / maxPred * 100) : 0
+            return (
+              <div key={cat} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>{catInfo?.icon || '📦'}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{cat}</span>
+                    {trend !== 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700,
+                        color: trend > 0 ? 'var(--danger)' : 'var(--success)',
+                        background: trend > 0 ? 'rgba(255,69,58,0.1)' : 'rgba(50,215,75,0.1)',
+                        padding: '1px 6px', borderRadius: 6,
+                      }}>
+                        {trend > 0 ? '▲' : '▼'} {Math.abs(trend)}%
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, color: catInfo?.color || '#fff' }}>
+                    ฿{fmt(Math.round(pred))}
+                  </span>
+                </div>
+                <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: catInfo?.color || 'var(--primary)', borderRadius: 2, transition: 'width 0.4s' }} />
+                </div>
+              </div>
+            )
+          })}
+      </div>
+
+      {/* Top items forecast */}
+      <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          🛒 รายการที่คาดว่าจะใช้เงินมากสุด
+        </div>
+        {data.topItemPrediction.map((d, i) => (
+          <div key={d.item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' }}>
+            <div style={{ width: 20, fontWeight: 800, fontSize: 12,
+              color: i === 0 ? '#FFD60A' : i === 1 ? '#8E8E93' : i === 2 ? '#CD7F32' : 'var(--dim)' }}>
+              {i + 1}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.item}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--dim)' }}>
+                ข้อมูล {d.months} เดือน
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--primary)' }}>
+                ฿{fmt(Math.round(d.pred))}
+              </div>
+              {d.trend !== 0 && d.months >= 2 && (
+                <div style={{ fontSize: 10, fontWeight: 700,
+                  color: d.trend > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                  {d.trend > 0 ? '▲' : '▼'} {Math.abs(d.trend)}%
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* หมายเหตุ */}
+      <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px solid var(--border2)' }}>
+        <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.6 }}>
+          💡 Forecast คำนวณจากข้อมูลย้อนหลัง 3 เดือน โดยให้น้ำหนักเดือนล่าสุดมากกว่า (45% : 35% : 20%)
+          · % แสดง trend เทียบกับค่าเฉลี่ย · ▲ สีแดง = แนวโน้มใช้เพิ่มขึ้น · ▼ สีเขียว = แนวโน้มลดลง
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 function Backup({ allOrders }) {
   const handleExportOrders = async () => {
     const { data: orders, error } = await supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false })
