@@ -797,6 +797,7 @@ function ActionNotes({ actionNotes, setActionNotes }) {
 function Forecast({ expenses }) {
   // ดึงเฉพาะ 3 เดือนล่าสุด (ไม่รวมเดือนปัจจุบัน)
   const now = new Date()
+  const [showAll, setShowAll] = useState(false)
 
   const data = useMemo(() => {
     // สร้าง map รายเดือน: { 'YYYY-MM': { total, byCategory, byItem } }
@@ -813,9 +814,13 @@ function Forecast({ expenses }) {
       monthMap[month].byCategory[cat] = (monthMap[month].byCategory[cat] || 0) + amt
 
       const item = e.item || 'ไม่ระบุ'
-      if (!monthMap[month].byItem[item]) monthMap[month].byItem[item] = { total: 0, count: 0 }
+      const qty  = parseFloat(e.quantity) || 0
+      const unit = e.unit || ''
+      if (!monthMap[month].byItem[item]) monthMap[month].byItem[item] = { total: 0, count: 0, qty: 0, unit: '' }
       monthMap[month].byItem[item].total += amt
       monthMap[month].byItem[item].count += 1
+      monthMap[month].byItem[item].qty   += qty
+      if (unit && !monthMap[month].byItem[item].unit) monthMap[month].byItem[item].unit = unit
     })
 
     // เรียง months และเอา 6 เดือนล่าสุด
@@ -850,25 +855,37 @@ function Forecast({ expenses }) {
       })
     }
 
-    // top items forecast
+    // all items forecast พร้อม qty + unit
     const itemForecast = {}
     last3.forEach(m => {
       Object.entries(monthMap[m].byItem).forEach(([item, d]) => {
-        if (!itemForecast[item]) itemForecast[item] = []
-        itemForecast[item].push(d.total)
+        if (!itemForecast[item]) itemForecast[item] = { amounts: [], qtys: [], unit: d.unit || '' }
+        itemForecast[item].amounts.push(d.total)
+        itemForecast[item].qtys.push(d.qty)
+        if (d.unit && !itemForecast[item].unit) itemForecast[item].unit = d.unit
       })
     })
-    const topItemPrediction = Object.entries(itemForecast)
-      .map(([item, vals]) => {
-        const avg = vals.reduce((s, v) => s + v, 0) / vals.length
-        const pred = vals.length >= 2
-          ? (vals.length === 2 ? vals[0] * 0.4 + vals[1] * 0.6 : vals[0] * 0.2 + vals[1] * 0.35 + vals[2] * 0.45)
-          : avg
-        const trend = vals.length >= 2 ? Math.round((vals[vals.length - 1] - vals[0]) / vals[0] * 100) : 0
-        return { item, pred, trend, months: vals.length }
+
+    const weightedAvg = (vals) => {
+      if (vals.length === 0) return 0
+      if (vals.length === 1) return vals[0]
+      if (vals.length === 2) return vals[0] * 0.4 + vals[1] * 0.6
+      return vals[0] * 0.2 + vals[1] * 0.35 + vals[2] * 0.45
+    }
+
+    const allItemPrediction = Object.entries(itemForecast)
+      .map(([item, d]) => {
+        const pred    = weightedAvg(d.amounts)
+        const predQty = weightedAvg(d.qtys.filter(q => q > 0))
+        const trend   = d.amounts.length >= 2
+          ? Math.round((d.amounts[d.amounts.length - 1] - d.amounts[0]) / (d.amounts[0] || 1) * 100)
+          : 0
+        const qtyTrend = d.qtys.length >= 2 && d.qtys[0] > 0
+          ? Math.round((d.qtys[d.qtys.length - 1] - d.qtys[0]) / d.qtys[0] * 100)
+          : 0
+        return { item, pred, predQty, unit: d.unit, trend, qtyTrend, months: d.amounts.length }
       })
       .sort((a, b) => b.pred - a.pred)
-      .slice(0, 10)
 
     // total forecast
     const totalForecast = Object.values(catPrediction).reduce((s, v) => s + v, 0)
@@ -892,7 +909,7 @@ function Forecast({ expenses }) {
     const currentProjected = daysPassed > 0 ? Math.round(currentTotal / daysPassed * daysInMonth) : 0
 
     return {
-      catPrediction, catTrend, topItemPrediction,
+      catPrediction, catTrend, allItemPrediction,
       totalForecast: Math.round(totalForecast),
       chartData, currentTotal, currentProjected,
       lastMonth, monthMap, last3,
@@ -1018,38 +1035,94 @@ function Forecast({ expenses }) {
           })}
       </div>
 
-      {/* Top items forecast */}
+      {/* All items forecast */}
       <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
-          🛒 รายการที่คาดว่าจะใช้เงินมากสุด
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            🛒 รายการทั้งหมด ({data.allItemPrediction.length})
+          </div>
+          {data.allItemPrediction.length > 10 && (
+            <button onClick={() => setShowAll(p => !p)} style={{
+              background: 'none', border: '1px solid var(--border2)', borderRadius: 8,
+              padding: '4px 10px', color: 'var(--primary)', fontSize: 11,
+              cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+            }}>
+              {showAll ? 'ย่อ' : `ดูทั้งหมด ${data.allItemPrediction.length} รายการ`}
+            </button>
+          )}
         </div>
-        {data.topItemPrediction.map((d, i) => (
-          <div key={d.item} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' }}>
-            <div style={{ width: 20, fontWeight: 800, fontSize: 12,
+
+        {/* Header row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr auto auto', gap: 8,
+          padding: '4px 0 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+          <div />
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 700 }}>รายการ</div>
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 700, textAlign: 'right' }}>ปริมาณ</div>
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 700, textAlign: 'right', minWidth: 70 }}>฿ Forecast</div>
+        </div>
+
+        {(showAll ? data.allItemPrediction : data.allItemPrediction.slice(0, 10)).map((d, i) => (
+          <div key={d.item} style={{
+            display: 'grid', gridTemplateColumns: '24px 1fr auto auto',
+            gap: 8, alignItems: 'center',
+            padding: '9px 0', borderBottom: '1px solid var(--border2)',
+          }}>
+            {/* rank */}
+            <div style={{ fontWeight: 800, fontSize: 11, textAlign: 'center',
               color: i === 0 ? '#FFD60A' : i === 1 ? '#8E8E93' : i === 2 ? '#CD7F32' : 'var(--dim)' }}>
               {i + 1}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+
+            {/* item name + meta */}
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {d.item}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-                ข้อมูล {d.months} เดือน
+              <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 9, color: 'var(--dim)' }}>{d.months} เดือน</span>
+                {d.trend !== 0 && d.months >= 2 && (
+                  <span style={{ fontSize: 9, fontWeight: 700,
+                    color: d.trend > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                    ฿{d.trend > 0 ? '▲' : '▼'}{Math.abs(d.trend)}%
+                  </span>
+                )}
               </div>
             </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+
+            {/* qty forecast */}
+            <div style={{ textAlign: 'right', minWidth: 64 }}>
+              {d.predQty > 0 ? (
+                <>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color: '#4D96FF' }}>
+                    {d.predQty % 1 === 0 ? d.predQty : d.predQty.toFixed(1)}
+                    <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>{d.unit}</span>
+                  </div>
+                  {d.qtyTrend !== 0 && d.months >= 2 && (
+                    <div style={{ fontSize: 9, color: d.qtyTrend > 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
+                      {d.qtyTrend > 0 ? '▲' : '▼'}{Math.abs(d.qtyTrend)}%
+                    </div>
+                  )}
+                </>
+              ) : (
+                <span style={{ fontSize: 10, color: 'var(--dim)' }}>—</span>
+              )}
+            </div>
+
+            {/* amount forecast */}
+            <div style={{ textAlign: 'right', minWidth: 70 }}>
               <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--primary)' }}>
                 ฿{fmt(Math.round(d.pred))}
               </div>
-              {d.trend !== 0 && d.months >= 2 && (
-                <div style={{ fontSize: 10, fontWeight: 700,
-                  color: d.trend > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                  {d.trend > 0 ? '▲' : '▼'} {Math.abs(d.trend)}%
-                </div>
-              )}
             </div>
           </div>
         ))}
+
+        {/* show more indicator */}
+        {!showAll && data.allItemPrediction.length > 10 && (
+          <div style={{ textAlign: 'center', padding: '12px 0 4px', color: 'var(--dim)', fontSize: 12 }}>
+            + อีก {data.allItemPrediction.length - 10} รายการ
+          </div>
+        )}
       </div>
 
       {/* หมายเหตุ */}
