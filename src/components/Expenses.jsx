@@ -583,86 +583,146 @@ function ExpenseAnalysis({ expenses, allOrders }) {
   const [from, setFrom]     = useState(todayStr)
   const [to, setTo]         = useState(todayStr)
 
+  // expenses ใช้ date field (YYYY-MM-DD)
   const expFiltered = useMemo(() =>
     period === 'custom' ? filterExpByRange(expenses, from, to) : filterExpByPeriod(expenses, period),
     [expenses, period, from, to]
   )
-  const ordFiltered = useMemo(() => {
-    return period === 'custom' ? filterByRange(allOrders, from, to) : filterByPeriod(allOrders, period)
-  }, [allOrders, period, from, to])
 
-  const totalRev  = ordFiltered.reduce((s, r) => s + (r.actual_amount || 0), 0)
-  const totalExp  = expFiltered.filter(e => e.category !== 'ส่วนลด').reduce((s, e) => s + (e.amount || 0), 0)
-  const profit    = totalRev - totalExp
-  const margin    = totalRev > 0 ? Math.round(profit / totalRev * 100) : 0
+  // orders ใช้ created_at — แปลง period ให้ตรงกัน
+  const ordFiltered = useMemo(() =>
+    period === 'custom' ? filterByRange(allOrders, from, to) : filterByPeriod(allOrders, period),
+    [allOrders, period, from, to]
+  )
 
+  const totalRev = ordFiltered.reduce((s, r) => s + (r.actual_amount || 0), 0)
+  const totalExp = expFiltered.filter(e => e.category !== 'ส่วนลด').reduce((s, e) => s + (e.amount || 0), 0)
+  const profit   = totalRev - totalExp
+  const margin   = totalRev > 0 ? Math.round(profit / totalRev * 100) : 0
+  const expCount = expFiltered.length
+  const avgExp   = expCount ? Math.round(totalExp / expCount) : 0
+
+  // category breakdown
   const catMap = {}
-  expFiltered.forEach(e => { const c = e.category || 'อื่นๆ'; catMap[c] = (catMap[c] || 0) + (e.amount || 0) })
-  const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1])
+  expFiltered.forEach(e => {
+    const c = e.category || 'อื่นๆ'
+    catMap[c] = (catMap[c] || 0) + (e.amount || 0)
+  })
+  const cats   = Object.entries(catMap).sort((a, b) => b[1] - a[1])
   const maxCat = cats[0]?.[1] || 1
 
-  // monthly chart
+  // monthly chart — รวม months จากทั้ง orders และ expenses
   const monthlyRev = {}, monthlyExp = {}
-  ordFiltered.forEach(r => { const m = (r.created_at || '').slice(0, 7); if (m) monthlyRev[m] = (monthlyRev[m] || 0) + (r.actual_amount || 0) })
-  expFiltered.filter(e => e.category !== 'ส่วนลด').forEach(e => { const m = (e.date || '').slice(0, 7); if (m) monthlyExp[m] = (monthlyExp[m] || 0) + (e.amount || 0) })
+  ordFiltered.forEach(r => {
+    const m = (r.created_at || '').slice(0, 7)
+    if (m) monthlyRev[m] = (monthlyRev[m] || 0) + (r.actual_amount || 0)
+  })
+  expFiltered.filter(e => e.category !== 'ส่วนลด').forEach(e => {
+    const m = (e.date || '').slice(0, 7)
+    if (m) monthlyExp[m] = (monthlyExp[m] || 0) + (e.amount || 0)
+  })
   const months = [...new Set([...Object.keys(monthlyRev), ...Object.keys(monthlyExp)])].sort().slice(-12)
   const chartData = months.map(m => ({
-    label: new Date(+m.split('-')[0], +m.split('-')[1] - 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }),
-    rev: Math.round(monthlyRev[m] || 0),
-    exp: Math.round(monthlyExp[m] || 0),
+    label: new Date(+m.split('-')[0], +m.split('-')[1] - 1)
+      .toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }),
+    rev:    Math.round(monthlyRev[m] || 0),
+    exp:    Math.round(monthlyExp[m] || 0),
+    profit: Math.round((monthlyRev[m] || 0) - (monthlyExp[m] || 0)),
   }))
 
-  // vendor
+  // vendor breakdown
   const vendorMap = {}
-  expFiltered.forEach(e => { if (!e.vendor) return; if (!vendorMap[e.vendor]) vendorMap[e.vendor] = { cnt: 0, total: 0 }; vendorMap[e.vendor].cnt++; vendorMap[e.vendor].total += e.amount || 0 })
-  const vendors = Object.entries(vendorMap).sort((a, b) => b[1].total - a[1].total).slice(0, 6)
+  expFiltered.forEach(e => {
+    if (!e.vendor) return
+    if (!vendorMap[e.vendor]) vendorMap[e.vendor] = { cnt: 0, total: 0 }
+    vendorMap[e.vendor].cnt++
+    vendorMap[e.vendor].total += e.amount || 0
+  })
+  const vendors   = Object.entries(vendorMap).sort((a, b) => b[1].total - a[1].total).slice(0, 6)
   const maxVendor = vendors[0]?.[1].total || 1
 
   const TIP = { contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 }, labelStyle: { color: '#fff' } }
 
   return (
     <div>
-      <PeriodBar period={period} onChange={setPeriod} options={EXP_PERIODS} from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+      <PeriodBar period={period} onChange={setPeriod} options={EXP_PERIODS}
+        from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
-      {/* Profit card */}
-      <div style={{ background: profit >= 0 ? 'rgba(50,215,75,0.1)' : 'rgba(255,69,58,0.1)', border: `1px solid ${profit >= 0 ? 'rgba(50,215,75,0.3)' : 'rgba(255,69,58,0.3)'}`, borderRadius: 18, padding: 20, marginBottom: 12, textAlign: 'center' }}>
-        <div style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: 1 }}>กำไรประมาณการ</div>
-        <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 34, fontWeight: 800, color: profit >= 0 ? 'var(--success)' : 'var(--danger)', margin: '6px 0' }}>
-          {profit < 0 ? '-' : ''}฿{fmt(Math.abs(profit))}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--dim)' }}>ยอดขาย ฿{fmt(totalRev)} − ต้นทุน ฿{fmt(totalExp)} · Margin {margin}%</div>
+      {/* Summary stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+        {[
+          { icon: '💸', label: 'ต้นทุนรวม',    val: `฿${fmt(totalExp)}`,   color: 'var(--danger)'  },
+          { icon: '💰', label: 'รายรับรวม',    val: `฿${fmt(totalRev)}`,   color: 'var(--success)' },
+          { icon: '📈', label: 'กำไรประมาณการ', val: `฿${fmt(Math.abs(profit))}`, color: profit >= 0 ? 'var(--success)' : 'var(--danger)' },
+          { icon: '🎯', label: 'Margin',        val: totalRev > 0 ? `${margin}%` : '—', color: margin >= 30 ? 'var(--success)' : margin >= 0 ? 'var(--primary)' : 'var(--danger)' },
+        ].map(({ icon, label, val, color }) => (
+          <div key={label} style={{
+            background: 'var(--surface)', borderRadius: 14, padding: '14px',
+            border: '1px solid var(--border)', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+            <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 18, color, marginBottom: 2 }}>{val}</div>
+            <div style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</div>
+          </div>
+        ))}
       </div>
 
       {/* Monthly chart */}
-      <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 10 }}>📈 รายรับ vs ต้นทุน รายเดือน</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={chartData} margin={{ left: -10, right: 5 }}>
-            <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} />
-            <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-            <Tooltip {...TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'rev' ? 'รายรับ' : 'ต้นทุน']} />
-            <Bar dataKey="rev" fill="rgba(50,215,75,0.7)" radius={[3, 3, 0, 0]} name="rev" />
-            <Bar dataKey="exp" fill="rgba(255,69,58,0.7)" radius={[3, 3, 0, 0]} name="exp" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {chartData.length > 0 && (
+        <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+            📊 รายรับ vs ต้นทุน รายเดือน
+          </div>
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 14, marginBottom: 10 }}>
+            {[['rgba(50,215,75,0.8)', 'รายรับ'], ['rgba(255,69,58,0.8)', 'ต้นทุน']].map(([color, label]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+                <span style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</span>
+              </div>
+            ))}
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={chartData} margin={{ left: -10, right: 5 }}>
+              <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} />
+              <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+              <Tooltip {...TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'rev' ? 'รายรับ' : n === 'exp' ? 'ต้นทุน' : 'กำไร']} />
+              <Bar dataKey="rev" fill="rgba(50,215,75,0.8)"  radius={[3,3,0,0]} name="rev" />
+              <Bar dataKey="exp" fill="rgba(255,69,58,0.8)"  radius={[3,3,0,0]} name="exp" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Category breakdown */}
       <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 12 }}>ต้นทุนแยกหมวด</div>
+        <div style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          📂 ต้นทุนแยกหมวด
+        </div>
+        {cats.length === 0 && <div style={{ color: 'var(--dim)', textAlign: 'center', padding: '16px 0', fontSize: 13 }}>ยังไม่มีข้อมูล</div>}
         {cats.map(([cat, val]) => {
-          const c = EXP_CATS.find(x => x.key === cat)
+          const c   = EXP_CATS.find(x => x.key === cat)
           const pct = totalExp > 0 ? Math.round(val / totalExp * 100) : 0
+          const cnt = expFiltered.filter(e => e.category === cat).length
           return (
-            <div key={cat} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 13 }}>{c?.icon} {cat}</span>
-                <span style={{ color: 'var(--danger)', fontWeight: 700, fontFamily: "'Inter',sans-serif", fontSize: 13 }}>฿{fmt(val)}</span>
+            <div key={cat} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 16 }}>{c?.icon || '📦'}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{cat}</span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ color: 'var(--danger)', fontWeight: 700, fontFamily: "'Inter',sans-serif", fontSize: 14 }}>
+                    ฿{fmt(Math.round(val))}
+                  </span>
+                  <span style={{ color: 'var(--dim)', fontSize: 11, marginLeft: 6 }}>{pct}%</span>
+                </div>
               </div>
-              <div style={{ height: 3, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round(val / maxCat * 100)}%`, background: c?.color || '#888', borderRadius: 2 }} />
+              <div style={{ height: 6, background: '#1a1a1a', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.round(val / maxCat * 100)}%`,
+                  background: c?.color || '#888', borderRadius: 3, transition: 'width 0.4s' }} />
               </div>
-              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 2 }}>{pct}% · {expFiltered.filter(e => e.category === cat).length} รายการ</div>
+              <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 3 }}>{cnt} รายการ</div>
             </div>
           )
         })}
@@ -671,13 +731,16 @@ function ExpenseAnalysis({ expenses, allOrders }) {
       {/* Vendor */}
       {vendors.length > 0 && (
         <div style={{ background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 10 }}>🏪 Vendor ที่ใช้จ่ายมากสุด</div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+            🏪 Vendor ที่ใช้จ่ายมากสุด
+          </div>
           {vendors.map(([v, d]) => (
             <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' }}>
               <div style={{ flex: 1, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.round(d.total / maxVendor * 100)}%`, background: 'var(--primary)', borderRadius: 2 }} />
+                  <div style={{ height: '100%', width: `${Math.round(d.total / maxVendor * 100)}%`,
+                    background: 'var(--primary)', borderRadius: 2 }} />
                 </div>
               </div>
               <div style={{ textAlign: 'right', minWidth: 80 }}>
