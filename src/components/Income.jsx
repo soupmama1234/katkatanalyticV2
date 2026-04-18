@@ -3,6 +3,7 @@ import { supabase } from '../supabase.js'
 import { filterExpByPeriod, filterExpByRange, fmt, todayStr } from '../utils/helpers.js'
 import { INC_CATS, UNIT_PRESETS, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
+import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
 
 const INPUT = {
   background: 'var(--surface2)', border: '1px solid var(--border2)',
@@ -15,6 +16,7 @@ const TABS = ['บันทึก', 'รายการ']
 
 export default function Income({ income, setIncome }) {
   const [tab, setTab] = useState('บันทึก')
+  const { toast, dialog, notify, confirm, handleConfirm } = useNotify()
 
   return (
     <div style={{ padding: '0 0 20px' }}>
@@ -29,13 +31,15 @@ export default function Income({ income, setIncome }) {
           }}>{t}</button>
         ))}
       </div>
-      {tab === 'บันทึก' && <IncomeForm income={income} setIncome={setIncome} />}
-      {tab === 'รายการ' && <IncomeList income={income} setIncome={setIncome} />}
+      {tab === 'บันทึก' && <IncomeForm income={income} setIncome={setIncome} notify={notify} />}
+      {tab === 'รายการ' && <IncomeList income={income} setIncome={setIncome} notify={notify} confirm={confirm} />}
+      <Toast toast={toast} />
+      <ConfirmDialog dialog={dialog} onConfirm={handleConfirm} />
     </div>
   )
 }
 
-function IncomeForm({ income, setIncome }) {
+function IncomeForm({ income, setIncome, notify }) {
   const emptyForm = { date: todayStr, item: '', category: '', quantity: '', unit: '', pricePerUnit: '', amount: '', source: '', note: '' }
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
@@ -52,8 +56,8 @@ function IncomeForm({ income, setIncome }) {
   const sourceHistory = useMemo(() => [...new Set(income.map(i => i.source).filter(Boolean))], [income])
 
   const handleSubmit = async () => {
-    if (!form.item.trim()) return alert('กรุณาใส่ชื่อรายการ')
-    if (!parseFloat(form.amount)) return alert('กรุณาใส่ยอดเงิน')
+    if (!form.item.trim()) return notify('กรุณาใส่ชื่อรายการ', 'warning')
+    if (!parseFloat(form.amount)) return notify('กรุณาใส่ยอดเงิน', 'warning')
     setSaving(true)
     try {
       const { data, error } = await supabase.from('other_income').insert({
@@ -70,7 +74,7 @@ function IncomeForm({ income, setIncome }) {
       if (error) throw error
       setIncome(prev => [data, ...prev])
       setForm(emptyForm)
-    } catch (e) { alert('❌ ' + e.message) }
+    } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
     setSaving(false)
   }
 
@@ -143,7 +147,7 @@ function IncomeForm({ income, setIncome }) {
   )
 }
 
-function IncomeList({ income, setIncome }) {
+function IncomeList({ income, setIncome, notify, confirm }) {
   const [period, setPeriod] = useState('30d')
   const [from, setFrom]     = useState(todayStr)
   const [to, setTo]         = useState(todayStr)
@@ -156,10 +160,13 @@ function IncomeList({ income, setIncome }) {
   const total = filtered.reduce((s, i) => s + (i.amount || 0), 0)
 
   const handleDelete = async (id) => {
-    if (!confirm('ลบรายการนี้?')) return
+    const item = filtered.find(i => i.id === id)
+    const ok = await confirm(`ลบ "${item?.item || 'รายการนี้'}" ออกจากรายได้อื่น?`)
+    if (!ok) return
     const { error } = await supabase.from('other_income').delete().eq('id', id)
-    if (error) return alert('❌ ' + error.message)
+    if (error) return notify('ลบไม่สำเร็จ: ' + error.message, 'error')
     setIncome(prev => prev.filter(i => i.id !== id))
+    notify('ลบรายการเรียบร้อย')
   }
 
   return (

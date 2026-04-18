@@ -5,13 +5,9 @@ import {
 } from 'recharts'
 import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
-import { filterByPeriod, filterByRange, computeStats, getOrderItems, fmt, todayStr } from '../utils/helpers.js'
+import { filterByPeriod, filterByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP} from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
-const TIP = {
-  contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 },
-  labelStyle: { color: '#fff' },
-}
 
 const DAY_NAMES_FULL  = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์']
 const DAY_NAMES_SHORT = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
@@ -143,7 +139,7 @@ function TrendTab({ allOrders }) {
           <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
             <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 10 }} />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
-            <Tooltip {...TIP} formatter={v => [`฿${fmt(v)}`, 'ยอดขาย']} />
+            <Tooltip {...CHART_TIP} formatter={v => [`฿${fmt(v)}`, 'ยอดขาย']} />
             <Line type="monotone" dataKey="value" stroke="var(--primary)" strokeWidth={2} dot={{ r: 2 }} />
           </LineChart>
         </ResponsiveContainer>
@@ -180,7 +176,7 @@ function TrendTab({ allOrders }) {
           <BarChart data={weekdayData} margin={{ left: -10, right: 10 }}>
             <XAxis dataKey="day" tick={{ fill: '#555', fontSize: 11 }} />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-            <Tooltip {...TIP} formatter={v => [`฿${fmt(v)}`, 'เฉลี่ย/บิล']} />
+            <Tooltip {...CHART_TIP} formatter={v => [`฿${fmt(v)}`, 'เฉลี่ย/บิล']} />
             <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
               {weekdayData.map((d, i) => (
                 <Cell key={i} fill={d.avg === maxWd ? 'var(--success)' : 'rgba(50,215,75,0.25)'} />
@@ -241,7 +237,7 @@ function PeakTab({ allOrders }) {
           <BarChart data={hourChart} margin={{ left: -15, right: 5 }}>
             <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} interval={2} />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} />
-            <Tooltip {...TIP} formatter={(v, name) => [
+            <Tooltip {...CHART_TIP} formatter={(v, name) => [
               name === 'orders' ? `${v} บิล` : `฿${fmt(v)}`,
               name === 'orders' ? 'ออเดอร์' : 'รายได้',
             ]} />
@@ -284,7 +280,7 @@ function PeakTab({ allOrders }) {
           <BarChart data={weekdayData} margin={{ left: -15, right: 5 }}>
             <XAxis dataKey="day" tick={{ fill: '#555', fontSize: 11 }} />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-            <Tooltip {...TIP} formatter={(v, name, props) => [`฿${fmt(v)} (${props.payload.cnt} วัน)`, 'เฉลี่ย/บิล']} />
+            <Tooltip {...CHART_TIP} formatter={(v, name, props) => [`฿${fmt(v)} (${props.payload.cnt} วัน)`, 'เฉลี่ย/บิล']} />
             <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
               {weekdayData.map((d, i) => (
                 <Cell key={i} fill={d.avg === maxWd ? 'var(--success)' : 'rgba(50,215,75,0.25)'} />

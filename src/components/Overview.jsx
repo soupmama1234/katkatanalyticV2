@@ -6,8 +6,7 @@ import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
 import {
   filterByPeriod, filterByRange, computeStats,
-  getOrderItems, fmt, todayStr
-} from '../utils/helpers.js'
+  getOrderItems, fmt, todayStr, CHART_TIP} from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
 export default function Overview({ allOrders }) {
