@@ -1,11 +1,10 @@
 import { useState, useMemo } from 'react'
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import PeriodBar from './ui/PeriodBar.jsx'
-import { filterByPeriod, filterByRange, fmt, todayStr } from '../utils/helpers.js'
+import { filterByPeriod, filterByRange, fmt, todayStr, CHART_TIP} from '../utils/helpers.js'
 import { STANDARD_PERIODS } from '../utils/constants.js'
 
 const CUST_TABS = ['ภาพรวม', 'ลูกค้าใหม่', 'ลูกค้าประจำ']
-const TIP = { contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 }, labelStyle: { color: '#fff' } }
 const DAY_NAMES = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์']
 
 function getCustomerOrders(orders) {
@@ -130,7 +129,7 @@ function CustOverview({ orders, member, newOrders, repeatOrders, unknown }) {
             <BarChart data={dailyData} margin={{ left: -15, right: 5 }}>
               <XAxis dataKey="day" tick={{ fill: '#555', fontSize: 9 }} />
               <YAxis tick={{ fill: '#555', fontSize: 9 }} />
-              <Tooltip {...TIP} />
+              <Tooltip {...CHART_TIP} />
               <Bar dataKey="member"  stackId="a" fill="#FF9F0A" name="Member"     />
               <Bar dataKey="new"     stackId="a" fill="#32D74B" name="ใหม่"       />
               <Bar dataKey="repeat"  stackId="a" fill="#4D96FF" name="ประจำ" radius={[3, 3, 0, 0]} />
@@ -189,7 +188,7 @@ function CustNew({ newOrders }) {
             <LineChart data={trendData} margin={{ left: -15, right: 5 }}>
               <XAxis dataKey="day" tick={{ fill: '#555', fontSize: 9 }} />
               <YAxis tick={{ fill: '#555', fontSize: 9 }} />
-              <Tooltip {...TIP} formatter={v => [v, 'ลูกค้าใหม่']} />
+              <Tooltip {...CHART_TIP} formatter={v => [v, 'ลูกค้าใหม่']} />
               <Line type="monotone" dataKey="cnt" stroke="var(--success)" strokeWidth={2} dot={{ r: 2 }} />
             </LineChart>
           </ResponsiveContainer>
