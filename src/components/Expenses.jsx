@@ -7,7 +7,7 @@ import {
 import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
-import { INPUT, Field, AutoComplete } from './expenses/shared.jsx'
+import { INPUT, MINI_CARD, Field, AutoComplete } from './expenses/shared.jsx'
 import ActionNotes from './expenses/ActionNotes.jsx'
 import Backup      from './expenses/Backup.jsx'
 import Forecast    from './expenses/Forecast.jsx'
