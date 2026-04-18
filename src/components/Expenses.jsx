@@ -3,10 +3,10 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContai
 import { supabase } from '../supabase.js'
 import {
   filterExpByPeriod, filterExpByRange, filterByPeriod, filterByRange,
-  fmt, todayStr, guessExpCategory, exportCSV
-} from '../utils/helpers.js'
+  fmt, todayStr, guessExpCategory, exportCSV, CHART_TIP} from '../utils/helpers.js'
 import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
+import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
 
 const TABS = ['บันทึก', 'รายการ', 'วิเคราะห์', 'Forecast', 'Action', 'Backup']
 
@@ -19,6 +19,7 @@ const INPUT = {
 
 export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes }) {
   const [tab, setTab] = useState('บันทึก')
+  const { toast, dialog, notify, confirm, handleConfirm } = useNotify()
 
   return (
     <div style={{ padding: '0 0 20px' }}>
@@ -35,18 +36,21 @@ export default function Expenses({ expenses, setExpenses, allOrders, actionNotes
         ))}
       </div>
 
-      {tab === 'บันทึก'  && <ExpenseForm expenses={expenses} setExpenses={setExpenses} />}
-      {tab === 'รายการ'  && <ExpenseList expenses={expenses} setExpenses={setExpenses} />}
+      {tab === 'บันทึก'    && <ExpenseForm    expenses={expenses} setExpenses={setExpenses} notify={notify} />}
+      {tab === 'รายการ'    && <ExpenseList    expenses={expenses} setExpenses={setExpenses} notify={notify} confirm={confirm} />}
       {tab === 'วิเคราะห์' && <ExpenseAnalysis expenses={expenses} allOrders={allOrders} />}
-      {tab === 'Forecast' && <Forecast expenses={expenses} />}
-      {tab === 'Action'  && <ActionNotes actionNotes={actionNotes} setActionNotes={setActionNotes} />}
-      {tab === 'Backup'  && <Backup allOrders={allOrders} />}
+      {tab === 'Forecast'  && <Forecast        expenses={expenses} />}
+      {tab === 'Action'    && <ActionNotes     actionNotes={actionNotes} setActionNotes={setActionNotes} notify={notify} confirm={confirm} />}
+      {tab === 'Backup'    && <Backup          allOrders={allOrders} notify={notify} />}
+
+      <Toast toast={toast} />
+      <ConfirmDialog dialog={dialog} onConfirm={handleConfirm} />
     </div>
   )
 }
 
 // ─── FORM ────────────────────────────────────────────────────────────────────
-function ExpenseForm({ expenses, setExpenses }) {
+function ExpenseForm({ expenses, setExpenses, notify }) {
   const emptyForm = { date: todayStr, item: '', category: '', quantity: '', unit: '', pricePerUnit: '', amount: '', discount: '', vendor: '', payment: '', note: '' }
   const [form, setForm]         = useState(emptyForm)
   const [saving, setSaving]     = useState(false)
@@ -78,9 +82,9 @@ function ExpenseForm({ expenses, setExpenses }) {
   }
 
   const handleSubmit = async () => {
-    if (!form.item.trim())     return alert('กรุณาใส่ชื่อรายการ')
-    if (!form.category)        return alert('กรุณาเลือกหมวดหมู่')
-    if (!parseFloat(form.amount)) return alert('กรุณาใส่ยอดเงิน')
+    if (!form.item.trim())     return notify('กรุณาใส่ชื่อรายการ', 'warning')
+    if (!form.category)        return notify('กรุณาเลือกหมวดหมู่', 'warning')
+    if (!parseFloat(form.amount)) return notify('กรุณาใส่ยอดเงิน', 'warning')
     setSaving(true)
     try {
       const qty = parseFloat(form.quantity) || null
@@ -101,7 +105,7 @@ function ExpenseForm({ expenses, setExpenses }) {
       setExpenses(prev => [data, ...prev])
       setForm(emptyForm)
       setUserSetCat(false)
-    } catch (e) { alert('❌ ' + e.message) }
+    } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
     setSaving(false)
   }
 
@@ -155,7 +159,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
       if (!resp.ok) throw new Error(result.error || 'API error')
       const raw = result.candidates?.[0]?.content?.parts?.[0]?.text || '[]'
       const items = JSON.parse(raw.replace(/```json|```/g, '').trim())
-      if (!items.length) return alert('ไม่พบรายการในรูปนี้')
+      if (!items.length) return notify('ไม่พบรายการในรูปนี้', 'warning')
       setOcrItems(items.map((it, i) => ({
         ...it,
         id: i,
@@ -164,7 +168,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         ppu: it.quantity && it.amount ? Math.round(it.amount / it.quantity * 100) / 100 : '',
       })))
       setOcrChecked(items.map((_, i) => i))
-    } catch (e) { alert('❌ OCR Error: ' + e.message) }
+    } catch (e) { notify('OCR Error: ' + e.message, 'error') }
     setOcrLoading(false)
   }
 
@@ -182,13 +186,13 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         vendor: it.vendor || null,
         note: 'ocr',
       })).filter(it => it.amount > 0)
-    if (!toSave.length) return alert('ไม่มีรายการที่เลือก')
+    if (!toSave.length) return notify('ไม่มีรายการที่เลือก', 'warning')
     const { data, error } = await supabase.from('expenses').insert(toSave).select()
-    if (error) return alert('❌ ' + error.message)
+    if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
     setExpenses(prev => [...(data || []), ...prev])
     setOcrItems([])
     setOcrChecked([])
-    alert(`✅ บันทึก ${toSave.length} รายการแล้ว`)
+    notify(`บันทึก ${toSave.length} รายการเรียบร้อย`)
   }
 
   // fuzzy match — หา suggestions จาก itemHistory ตาม keyword
@@ -472,7 +476,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
 }
 
 // ─── LIST ────────────────────────────────────────────────────────────────────
-function ExpenseList({ expenses, setExpenses }) {
+function ExpenseList({ expenses, setExpenses, notify, confirm }) {
   const [period, setPeriod] = useState('today')
   const [from, setFrom]     = useState(todayStr)
   const [to, setTo]         = useState(todayStr)
@@ -492,10 +496,13 @@ function ExpenseList({ expenses, setExpenses }) {
   const total = filtered.reduce((s, e) => s + (e.amount || 0), 0)
 
   const handleDelete = async (id) => {
-    if (!confirm('ลบรายการนี้?')) return
+    const item = filtered.find(e => e.id === id)
+    const ok = await confirm(`ลบ "${item?.item || 'รายการนี้'}" ออกจากบันทึกต้นทุน?`)
+    if (!ok) return
     const { error } = await supabase.from('expenses').delete().eq('id', id)
-    if (error) return alert('❌ ' + error.message)
+    if (error) return notify('ลบไม่สำเร็จ: ' + error.message, 'error')
     setExpenses(prev => prev.filter(e => e.id !== id))
+    notify('ลบรายการเรียบร้อย')
   }
 
   const startEdit = (e) => {
@@ -510,7 +517,7 @@ function ExpenseList({ expenses, setExpenses }) {
       date: editData.date || null, vendor: editData.vendor || null,
       price_per_unit: parseFloat(editData.price_per_unit) || null,
     }).eq('id', editId)
-    if (error) return alert('❌ ' + error.message)
+    if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
     setExpenses(prev => prev.map(e => e.id === editId ? { ...e, ...editData, amount: parseFloat(editData.amount), quantity: parseFloat(editData.quantity) || null } : e))
     setEditId(null)
   }
@@ -641,8 +648,6 @@ function ExpenseAnalysis({ expenses, allOrders }) {
   const vendors   = Object.entries(vendorMap).sort((a, b) => b[1].total - a[1].total).slice(0, 6)
   const maxVendor = vendors[0]?.[1].total || 1
 
-  const TIP = { contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 }, labelStyle: { color: '#fff' } }
-
   return (
     <div>
       <PeriodBar period={period} onChange={setPeriod} options={EXP_PERIODS}
@@ -686,7 +691,7 @@ function ExpenseAnalysis({ expenses, allOrders }) {
             <BarChart data={chartData} margin={{ left: -10, right: 5 }}>
               <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} />
               <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
-              <Tooltip {...TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'rev' ? 'รายรับ' : n === 'exp' ? 'ต้นทุน' : 'กำไร']} />
+              <Tooltip {...CHART_TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'rev' ? 'รายรับ' : n === 'exp' ? 'ต้นทุน' : 'กำไร']} />
               <Bar dataKey="rev" fill="rgba(50,215,75,0.8)"  radius={[3,3,0,0]} name="rev" />
               <Bar dataKey="exp" fill="rgba(255,69,58,0.8)"  radius={[3,3,0,0]} name="exp" />
             </BarChart>
@@ -756,34 +761,37 @@ function ExpenseAnalysis({ expenses, allOrders }) {
 }
 
 // ─── ACTION NOTES ─────────────────────────────────────────────────────────────
-function ActionNotes({ actionNotes, setActionNotes }) {
+function ActionNotes({ actionNotes, setActionNotes, notify, confirm }) {
   const [form, setForm]     = useState({ date: todayStr, category: 'general', content: '' })
   const [editId, setEditId] = useState(null)
   const [editContent, setEditContent] = useState('')
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
-    if (!form.content.trim()) return alert('กรุณาใส่รายละเอียด')
+    if (!form.content.trim()) return notify('กรุณาใส่รายละเอียด', 'warning')
     setSaving(true)
     const { data, error } = await supabase.from('business_notes').insert({
       note_date: form.date, content: form.content.trim(), category: form.category,
     }).select().single()
-    if (error) { alert('❌ ' + error.message); setSaving(false); return }
+    if (error) { notify('บันทึกไม่สำเร็จ: ' + error.message, 'error'); setSaving(false); return }
     setActionNotes(prev => [data, ...prev])
     setForm(f => ({ ...f, content: '' }))
     setSaving(false)
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('ลบรายการนี้?')) return
+    const note = actionNotes.find(n => n.id === id)
+    const ok = await confirm(`ลบ Action Note นี้?\n"${note?.content?.slice(0, 40) || ''}${(note?.content?.length || 0) > 40 ? '...' : ''}"'`)
+    if (!ok) return
     const { error } = await supabase.from('business_notes').delete().eq('id', id)
-    if (error) return alert('❌ ' + error.message)
+    if (error) return notify('ลบไม่สำเร็จ: ' + error.message, 'error')
     setActionNotes(prev => prev.filter(n => n.id !== id))
+    notify('ลบรายการเรียบร้อย')
   }
 
   const handleEditSave = async (id) => {
     const { error } = await supabase.from('business_notes').update({ content: editContent }).eq('id', id)
-    if (error) return alert('❌ ' + error.message)
+    if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
     setActionNotes(prev => prev.map(n => n.id === id ? { ...n, content: editContent } : n))
     setEditId(null)
   }
@@ -979,10 +987,6 @@ function Forecast({ expenses }) {
     }
   }, [expenses, now])
 
-  const TIP = {
-    contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 },
-    labelStyle: { color: '#fff' },
-  }
 
   const nextMonthName = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     .toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
@@ -1041,7 +1045,7 @@ function Forecast({ expenses }) {
           <LineChart data={data.chartData} margin={{ left: -10, right: 10 }}>
             <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 10 }} />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
-            <Tooltip {...TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'actual' ? 'จริง' : 'Forecast']} />
+            <Tooltip {...CHART_TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'actual' ? 'จริง' : 'Forecast']} />
             <Line type="monotone" dataKey="actual" stroke="var(--primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
             <Line type="monotone" dataKey="forecast" stroke="#4D96FF" strokeWidth={2}
               strokeDasharray="5 4" dot={{ r: 5, fill: '#4D96FF' }} connectNulls />
@@ -1200,10 +1204,10 @@ function Forecast({ expenses }) {
 }
 
 
-function Backup({ allOrders }) {
+function Backup({ allOrders, notify }) {
   const handleExportOrders = async () => {
     const { data: orders, error } = await supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false })
-    if (error || !orders?.length) return alert('ไม่มีข้อมูล')
+    if (error || !orders?.length) return notify('ไม่มีข้อมูลให้ export', 'warning')
     const rows = []
     rows.push(['วันที่', 'เวลา', 'บิล ID', 'ช่องทาง', 'โต๊ะ', 'สมาชิก', 'รายการ', 'ตัวเลือกเสริม', 'จำนวน', 'ราคา/ชิ้น', 'รวมรายการ', 'ยอดบิล', 'ชำระ', 'สถานะ'].join(','))
     for (const o of orders) {
