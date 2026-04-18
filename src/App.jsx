@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useData } from './hooks/useData.js'
 import { Toast, useToast } from './components/ui/Toast.jsx'
+import { supabase } from './supabase.js'
+import LoginScreen from './components/LoginScreen.jsx'
 import Overview  from './components/Overview.jsx'
 import TrendPeak from './components/TrendPeak.jsx'
 import Expenses  from './components/Expenses.jsx'
@@ -66,6 +68,21 @@ const TABS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview')
   const { toast, showToast } = useToast()
+  const [session, setSession]     = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  useEffect(() => {
+    // ตรวจ session ที่มีอยู่แล้ว
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setAuthLoading(false)
+    })
+    // listen ถ้า session เปลี่ยน
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
   const {
     allOrders, products,
     expenses,    setExpenses,
@@ -74,6 +91,15 @@ export default function App() {
     actionNotes, setActionNotes,
     loading, error, refetch,
   } = useData()
+
+  // ── Auth guards ──────────────────────────────────────────────────────────
+  if (authLoading) return (
+    <div style={FULL_CENTER}>
+      <div style={SPINNER} />
+    </div>
+  )
+
+  if (!session) return <LoginScreen onLogin={s => setSession(s)} />
 
   if (loading) return (
     <div style={FULL_CENTER}>
