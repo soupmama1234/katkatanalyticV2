@@ -143,9 +143,21 @@ export default function App() {
           <span style={{ fontSize: 18 }}>{activeTabData?.icon}</span>
           <span style={{ fontSize: 14, fontWeight: 700 }}>{activeTabData?.label}</span>
         </div>
-        <button onClick={refetch} style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 18, padding: 4 }} title="รีโหลด">
-          🔄
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={refetch} style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 18, padding: 4 }} title="รีโหลด">
+            🔄
+          </button>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            style={{
+              background: 'none', border: '1px solid #2a2a2a',
+              borderRadius: 8, color: '#555', cursor: 'pointer',
+              fontSize: 12, padding: '5px 12px', fontFamily: 'inherit',
+            }}
+          >
+            ออกจากระบบ
+          </button>
+        </div>
       </div>
 
       <div style={CONTENT} key={activeTab} className="fade-in">
