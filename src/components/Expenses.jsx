@@ -383,7 +383,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                 background: form.category === c.key ? c.color : 'var(--surface2)',
                 color: form.category === c.key ? '#000' : 'var(--dim)',
                 fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: form.category === c.key ? 700 : 400,
-              }} onClick={() => { set('category', c.key); setUserSetCat(true) }}>{c.icon} {c.key}</button>
+              }}>{c.icon} {c.key}</button>
             ))}
           </div>
         </Field>
