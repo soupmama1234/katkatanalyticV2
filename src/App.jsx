@@ -8,6 +8,52 @@ import Income    from './components/Income.jsx'
 import Recipe    from './components/Recipe.jsx'
 import Customer  from './components/Customer.jsx'
 
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+import { Component } from 'react'
+
+export class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('KATKAT Analytics error:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          background: '#000', padding: 24, gap: 16, textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 48 }}>⚠️</div>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>เกิดข้อผิดพลาด</div>
+          <div style={{ color: '#666', fontSize: 12, maxWidth: 280, lineHeight: 1.6 }}>
+            {this.state.error?.message || 'Unknown error'}
+          </div>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{
+              background: 'var(--primary)', color: '#000', border: 'none',
+              borderRadius: 12, padding: '12px 24px',
+              fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            ลองใหม่
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+
+
 const TABS = [
   { key: 'overview',   icon: '📊', label: 'ภาพรวม'   },
   { key: 'trendpeak',  icon: '📈', label: 'แนวโน้ม'  },

@@ -168,3 +168,9 @@ export async function exportCSV(supabase, table) {
   a.click(); URL.revokeObjectURL(url)
   return true
 }
+
+// ── Shared chart tooltip style ──────────────────────────────────────────────
+export const CHART_TIP = {
+  contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 },
+  labelStyle: { color: '#fff' },
+}

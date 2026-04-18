@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../supabase.js'
 import { fmt } from '../utils/helpers.js'
+import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
 
 const INPUT = {
   background: 'var(--surface2)', border: '1px solid var(--border2)',
@@ -13,6 +14,7 @@ const TABS = ['สูตรอาหาร', 'วิเคราะห์ Margin
 
 export default function Recipe({ recipes, setRecipes, products, expenses }) {
   const [tab, setTab] = useState('สูตรอาหาร')
+  const { toast, dialog, notify, confirm, handleConfirm } = useNotify()
 
   return (
     <div style={{ padding: '0 0 20px' }}>
@@ -26,8 +28,10 @@ export default function Recipe({ recipes, setRecipes, products, expenses }) {
           }}>{t}</button>
         ))}
       </div>
-      {tab === 'สูตรอาหาร'     && <RecipeList recipes={recipes} setRecipes={setRecipes} products={products} expenses={expenses} />}
+      {tab === 'สูตรอาหาร'     && <RecipeList recipes={recipes} setRecipes={setRecipes} products={products} expenses={expenses} notify={notify} confirm={confirm} />}
       {tab === 'วิเคราะห์ Margin' && <MarginAnalysis recipes={recipes} products={products} expenses={expenses} />}
+      <Toast toast={toast} />
+      <ConfirmDialog dialog={dialog} onConfirm={handleConfirm} />
     </div>
   )
 }
@@ -53,7 +57,7 @@ function calcRecipeCost(ings, expenses) {
 }
 
 // ─── Recipe List ──────────────────────────────────────────────────────────────
-function RecipeList({ recipes, setRecipes, products, expenses }) {
+function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }) {
   const [showModal, setShowModal]   = useState(false)
   const [editMenu, setEditMenu]     = useState('')
   const [ingredients, setIngredients] = useState([{ ingredient: '', quantity: '', unit: '' }])
@@ -82,9 +86,9 @@ function RecipeList({ recipes, setRecipes, products, expenses }) {
   const updateRow = (i, key, val) => setIngredients(prev => prev.map((r, j) => j === i ? { ...r, [key]: val } : r))
 
   const handleSave = async () => {
-    if (!editMenu) return alert('กรุณาเลือกเมนู')
+    if (!editMenu) return notify('กรุณาเลือกเมนู', 'warning')
     const rows = ingredients.filter(r => r.ingredient.trim() && parseFloat(r.quantity) > 0)
-    if (!rows.length) return alert('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 อย่าง')
+    if (!rows.length) return notify('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 อย่าง', 'warning')
     setSaving(true)
     try {
       await supabase.from('recipes').delete().eq('menu_name', editMenu)
@@ -94,7 +98,7 @@ function RecipeList({ recipes, setRecipes, products, expenses }) {
       if (error) throw error
       setRecipes(prev => [...prev.filter(r => r.menu_name !== editMenu), ...(data || [])])
       setShowModal(false)
-    } catch (e) { alert('❌ ' + e.message) }
+    } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
     setSaving(false)
   }
 
