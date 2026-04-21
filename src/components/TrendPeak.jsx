@@ -5,8 +5,8 @@ import {
 } from 'recharts'
 import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
-import { filterByPeriod, filterByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP} from '../utils/helpers.js'
-import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
+import { filterByPeriod, filterByRange, filterExpByPeriod, filterExpByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP } from '../utils/helpers.js'
+import { CH_COLOR, STANDARD_PERIODS, EXP_CATS, EXP_PERIODS } from '../utils/constants.js'
 
 
 const DAY_NAMES_FULL  = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์']
@@ -17,7 +17,7 @@ function isRealOrder(r) {
 }
 
 // ─── SUB TAB: แนวโน้ม ──────────────────────────────────────────────────────────
-function TrendTab({ allOrders }) {
+function TrendTab({ allOrders, expenses }) {
   const [period, setPeriod] = useState('7d')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
@@ -168,6 +168,84 @@ function TrendTab({ allOrders }) {
         })}
         {platforms.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
+
+
+      {/* 💸 ต้นทุน vs รายรับ */}
+      {expenses && expenses.length > 0 && (() => {
+        // คำนวณ monthly data
+        const monthlyRev = {}, monthlyExp = {}
+        orders.forEach(r => {
+          const m = (r.created_at || '').slice(0, 7)
+          if (m) monthlyRev[m] = (monthlyRev[m] || 0) + (r.actual_amount || 0)
+        })
+        const expForPeriod = period === 'custom'
+          ? filterExpByRange(expenses, from, to)
+          : filterExpByPeriod(expenses, period)
+        expForPeriod.filter(e => e.category !== 'ส่วนลด').forEach(e => {
+          const m = (e.date || '').slice(0, 7)
+          if (m) monthlyExp[m] = (monthlyExp[m] || 0) + (e.amount || 0)
+        })
+        const months = [...new Set([...Object.keys(monthlyRev), ...Object.keys(monthlyExp)])].sort().slice(-12)
+        const costChart = months.map(m => ({
+          label: new Date(+m.split('-')[0], +m.split('-')[1] - 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }),
+          rev:    Math.round(monthlyRev[m] || 0),
+          exp:    Math.round(monthlyExp[m] || 0),
+        }))
+        const totalExpAll = expForPeriod.filter(e => e.category !== 'ส่วนลด').reduce((s, e) => s + (e.amount || 0), 0)
+        const profit = total - totalExpAll
+        const margin = total > 0 ? Math.round(profit / total * 100) : null
+
+        return (
+          <>
+            {/* Margin summary */}
+            <div style={{ ...S.card, background: profit >= 0 ? 'rgba(50,215,75,0.06)' : 'rgba(255,69,58,0.06)', border: `1px solid ${profit >= 0 ? 'rgba(50,215,75,0.2)' : 'rgba(255,69,58,0.2)'}` }}>
+              <div style={S.cardTitle}>💸 รายรับ vs ต้นทุน</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
+                {[
+                  { label: 'รายรับ',   val: `฿${fmt(total)}`,           color: 'var(--success)' },
+                  { label: 'ต้นทุน',   val: `฿${fmt(totalExpAll)}`,     color: 'var(--danger)'  },
+                  { label: 'กำไร',     val: `฿${fmt(Math.abs(profit))}`, color: profit >= 0 ? 'var(--success)' : 'var(--danger)' },
+                ].map(({ label, val, color }) => (
+                  <div key={label}>
+                    <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 15, color }}>{val}</div>
+                    <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 2 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              {margin !== null && (
+                <div style={{ textAlign: 'center', marginTop: 10, fontSize: 13, fontWeight: 700,
+                  color: margin >= 30 ? 'var(--success)' : margin >= 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                  Gross Margin {margin}%
+                </div>
+              )}
+            </div>
+
+            {/* Rev vs Cost chart */}
+            {costChart.length > 1 && (
+              <div style={S.card}>
+                <div style={S.cardTitle}>📊 รายรับ vs ต้นทุน รายเดือน</div>
+                <div style={{ display: 'flex', gap: 14, marginBottom: 8 }}>
+                  {[['rgba(50,215,75,0.8)', 'รายรับ'], ['rgba(255,69,58,0.8)', 'ต้นทุน']].map(([color, label]) => (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+                      <span style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={costChart} margin={{ left: -10, right: 5 }}>
+                    <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} />
+                    <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+                    <Tooltip {...CHART_TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'rev' ? 'รายรับ' : 'ต้นทุน']} />
+                    <Bar dataKey="rev" fill="rgba(50,215,75,0.8)" radius={[3,3,0,0]} />
+                    <Bar dataKey="exp" fill="rgba(255,69,58,0.8)" radius={[3,3,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* Weekday bar */}
       <div style={S.card}>
@@ -552,7 +630,7 @@ function TopMenuCompare({ ordersA, ordersB, labelA, labelB }) {
   )
 }
 
-function CompareTab({ allOrders }) {
+function CompareTab({ allOrders, expenses }) {
   const [quickPair, setQuickPair] = useState(0)
   const [modeA, setModeA] = useState('7d')
   const [modeB, setModeB] = useState('prev7d')
@@ -672,6 +750,34 @@ function CompareTab({ allOrders }) {
           format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
       </div>
 
+
+      {/* Cost comparison (ถ้ามี expenses) */}
+      {expenses && expenses.length > 0 && (() => {
+        const getExpForOrders = (orders) => {
+          if (!orders.length) return { total: 0 }
+          const dates = orders.map(o => (o.created_at || '').slice(0, 10)).filter(Boolean).sort()
+          const from = dates[0], to = dates[dates.length - 1]
+          const filtered = expenses.filter(e => e.date && e.date >= from && e.date <= to && e.category !== 'ส่วนลด')
+          return { total: filtered.reduce((s, e) => s + (e.amount || 0), 0) }
+        }
+        const costA = getExpForOrders(ordersA)
+        const costB = getExpForOrders(ordersB)
+        const profA = statsA.total - costA.total
+        const profB = statsB.total - costB.total
+        const marA  = statsA.total > 0 ? Math.round(profA / statsA.total * 100) : null
+        const marB  = statsB.total > 0 ? Math.round(profB / statsB.total * 100) : null
+        return (
+          <div style={S.card}>
+            <div style={S.cardTitle}>💸 ต้นทุน & กำไร เปรียบเทียบ</div>
+            <CompareMetric label="ต้นทุน"  valA={costA.total} valB={costB.total} format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
+            <CompareMetric label="กำไร"    valA={profA}       valB={profB}       format={v => `฿${fmt(Math.abs(v))}`} labelA={labelA} labelB={labelB} />
+            {marA !== null && marB !== null && (
+              <CompareMetric label="Margin" valA={marA} valB={marB} format={v => `${v}%`} labelA={labelA} labelB={labelB} />
+            )}
+          </div>
+        )
+      })()}
+
       {/* Top menu compare */}
       <div style={S.card}>
         <div style={S.cardTitle}>🏆 เมนูขายดี เปรียบเทียบ</div>
@@ -689,7 +795,7 @@ const SUB_TABS = [
   { key: 'compare', label: '⚖️ เปรียบเทียบ' },
 ]
 
-export default function TrendPeak({ allOrders }) {
+export default function TrendPeak({ allOrders, expenses = [] }) {
   const [sub, setSub] = useState('trend')
 
   return (
@@ -714,9 +820,9 @@ export default function TrendPeak({ allOrders }) {
         ))}
       </div>
 
-      {sub === 'trend'   && <TrendTab   allOrders={allOrders} />}
+      {sub === 'trend'   && <TrendTab   allOrders={allOrders} expenses={expenses} />}
       {sub === 'peak'    && <PeakTab    allOrders={allOrders} />}
-      {sub === 'compare' && <CompareTab allOrders={allOrders} />}
+      {sub === 'compare' && <CompareTab allOrders={allOrders} expenses={expenses} />}
     </div>
   )
 }

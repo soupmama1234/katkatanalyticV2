@@ -36,35 +36,55 @@ function getSeasonalityFactor(monthMap, targetMonth) {
   return Math.min(1.3, Math.max(0.7, factor))
 }
 
-// ── Price Alert: ตรวจ item ที่ราคาเปลี่ยนมากใน 2 ซื้อล่าสุด ────────────────
+// ── Price Alert: เทียบราคาล่าสุดกับ median 3 เดือนล่าสุด ────────────────────
+function median(arr) {
+  if (!arr.length) return 0
+  const sorted = [...arr].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
 function detectPriceAlerts(expenses, threshold = 10) {
-  // group by item → เรียง by date → เปรียบเทียบ ppu ล่าสุดกับก่อนหน้า
+  const now = new Date()
+  // เอาแค่ 3 เดือนล่าสุดสำหรับ baseline
+  const cutoff3m = new Date(now.getFullYear(), now.getMonth() - 3, 1).toISOString().slice(0, 10)
+  // เดือนปัจจุบัน
+  const currentMonth = now.toISOString().slice(0, 7)
+
   const byItem = {}
   expenses.forEach(e => {
-    if (!e.item || !e.price_per_unit || !e.quantity) return
-    if (!byItem[e.item]) byItem[e.item] = []
-    byItem[e.item].push({
-      date: e.date || '',
-      ppu:  parseFloat(e.price_per_unit),
-      unit: e.unit || '',
-    })
+    if (!e.item || !e.price_per_unit) return
+    const ppu = parseFloat(e.price_per_unit)
+    if (!ppu || ppu <= 0) return
+    if (!byItem[e.item]) byItem[e.item] = { baseline: [], recent: null }
+
+    const isCurrentMonth = (e.date || '').slice(0, 7) === currentMonth
+    const isIn3m = (e.date || '') >= cutoff3m && !isCurrentMonth
+
+    if (isIn3m) byItem[e.item].baseline.push({ ppu, date: e.date || '', unit: e.unit || '' })
+    else if (isCurrentMonth) {
+      // เก็บซื้อล่าสุดของเดือนนี้
+      if (!byItem[e.item].recent || (e.date || '') > byItem[e.item].recent.date) {
+        byItem[e.item].recent = { ppu, date: e.date || '', unit: e.unit || '' }
+      }
+    }
   })
 
   const alerts = []
-  Object.entries(byItem).forEach(([item, records]) => {
-    const sorted = records.filter(r => r.ppu > 0).sort((a, b) => a.date.localeCompare(b.date))
-    if (sorted.length < 2) return
-    const prev    = sorted[sorted.length - 2]
-    const current = sorted[sorted.length - 1]
-    const pct = ((current.ppu - prev.ppu) / prev.ppu) * 100
+  Object.entries(byItem).forEach(([item, d]) => {
+    if (!d.recent || d.baseline.length < 2) return
+    const basePpu = median(d.baseline.map(r => r.ppu))
+    if (basePpu <= 0) return
+    const pct = ((d.recent.ppu - basePpu) / basePpu) * 100
     if (Math.abs(pct) >= threshold) {
       alerts.push({
         item,
-        prevPpu:    prev.ppu,
-        currentPpu: current.ppu,
+        prevPpu:    basePpu,
+        currentPpu: d.recent.ppu,
         pct:        Math.round(pct),
-        unit:       current.unit,
-        date:       current.date,
+        unit:       d.recent.unit,
+        date:       d.recent.date,
+        baseCount:  d.baseline.length,
       })
     }
   })
@@ -74,7 +94,8 @@ function detectPriceAlerts(expenses, threshold = 10) {
 
 export default function Forecast({ expenses }) {
   const [showAll, setShowAll] = useState(false)
-  const now = new Date()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const now = useMemo(() => new Date(), [])
 
   // ── Build month map ───────────────────────────────────────────────────────
   const { monthMap, sortedMonths } = useMemo(() => {
@@ -199,7 +220,7 @@ export default function Forecast({ expenses }) {
           borderRadius: 16, padding: '14px 16px', marginBottom: 14,
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)', marginBottom: 10 }}>
-            🚨 แจ้งเตือนราคาเปลี่ยน (≥10%)
+            🚨 ราคาเปลี่ยนจาก median 3 เดือน (≥10%)
           </div>
           {priceAlerts.slice(0, 5).map(a => (
             <div key={a.item} style={{
@@ -209,8 +230,8 @@ export default function Forecast({ expenses }) {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{a.item}</div>
                 <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
-                  ฿{a.prevPpu.toFixed(2)} → ฿{a.currentPpu.toFixed(2)}/{a.unit || 'หน่วย'}
-                  <span style={{ color: '#666', marginLeft: 6 }}>{a.date}</span>
+                  median ฿{a.prevPpu.toFixed(2)} → ล่าสุด ฿{a.currentPpu.toFixed(2)}/{a.unit || 'หน่วย'}
+                  <span style={{ color: '#666', marginLeft: 6 }}>{a.date} · อ้างอิง {a.baseCount} ครั้ง</span>
                 </div>
               </div>
               <div style={{
