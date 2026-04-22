@@ -93,7 +93,8 @@ function detectPriceAlerts(expenses, threshold = 10) {
 }
 
 export default function Forecast({ expenses }) {
-  const [showAll, setShowAll] = useState(false)
+  const [showAll, setShowAll]           = useState(false)
+  const [showAllAlerts, setShowAllAlerts] = useState(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const now = useMemo(() => new Date(), [])
 
@@ -222,20 +223,20 @@ export default function Forecast({ expenses }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)', marginBottom: 10 }}>
             🚨 ราคาเปลี่ยนจาก median 3 เดือน (≥10%)
           </div>
-          {priceAlerts.slice(0, 5).map(a => (
+          {(showAllAlerts ? priceAlerts : priceAlerts.slice(0, 5)).map(a => (
             <div key={a.item} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '8px 0', borderBottom: '1px solid rgba(255,69,58,0.1)',
             }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{a.item}</div>
+              <div style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.item}</div>
                 <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
                   median ฿{a.prevPpu.toFixed(2)} → ล่าสุด ฿{a.currentPpu.toFixed(2)}/{a.unit || 'หน่วย'}
                   <span style={{ color: '#666', marginLeft: 6 }}>{a.date} · อ้างอิง {a.baseCount} ครั้ง</span>
                 </div>
               </div>
               <div style={{
-                fontSize: 14, fontWeight: 800,
+                fontSize: 14, fontWeight: 800, flexShrink: 0,
                 color: a.pct > 0 ? 'var(--danger)' : 'var(--success)',
                 background: a.pct > 0 ? 'rgba(255,69,58,0.15)' : 'rgba(50,215,75,0.15)',
                 padding: '4px 10px', borderRadius: 8,
@@ -245,9 +246,14 @@ export default function Forecast({ expenses }) {
             </div>
           ))}
           {priceAlerts.length > 5 && (
-            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 8, textAlign: 'center' }}>
-              + อีก {priceAlerts.length - 5} รายการ
-            </div>
+            <button onClick={() => setShowAllAlerts(p => !p)} style={{
+              width: '100%', marginTop: 10, padding: '8px',
+              background: 'none', border: '1px solid rgba(255,69,58,0.25)',
+              borderRadius: 8, color: 'var(--danger)', fontSize: 12,
+              fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              {showAllAlerts ? '▲ ย่อ' : `▼ ดูทั้งหมด ${priceAlerts.length} รายการ`}
+            </button>
           )}
         </div>
       )}
