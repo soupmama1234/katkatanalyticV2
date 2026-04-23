@@ -24,11 +24,31 @@ export function Field({ label, children }) {
   )
 }
 
+// fuzzy score — ยิ่งสูงยิ่งตรง
+function fuzzyScore(name, kw) {
+  const n = name.toLowerCase().replace(/\s+/g, '')
+  const k = kw.toLowerCase().replace(/\s+/g, '')
+  if (!k) return 0
+  if (n === k) return 100
+  if (n.startsWith(k)) return 90
+  if (n.includes(k)) return 80
+  if (k.includes(n)) return 70
+  // char overlap score
+  const overlap = [...k].filter(c => n.includes(c)).length
+  return Math.round(overlap / k.length * 60)
+}
+
 export function AutoComplete({ value, onChange, suggestions, placeholder }) {
   const [open, setOpen] = useState(false)
-  const matches = (suggestions || [])
-    .filter(s => s.toLowerCase().includes((value || '').toLowerCase()))
-    .slice(0, 6)
+  const kw = (value || '').trim()
+  const matches = kw.length === 0
+    ? []
+    : (suggestions || [])
+        .map(s => ({ s, score: fuzzyScore(s, kw) }))
+        .filter(({ score }) => score >= 40)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map(({ s }) => s)
   return (
     <div style={{ position: 'relative' }}>
       <input
