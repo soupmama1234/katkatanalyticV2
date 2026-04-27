@@ -171,6 +171,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
 
   const saveOcrItems = async () => {
     const toSave = ocrItems
+      console.log('toSave:', toSave)
       .filter((_, i) => ocrChecked.includes(i))
       .map(it => ({
         date: it.date || todayStr,
