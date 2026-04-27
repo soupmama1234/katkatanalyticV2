@@ -54,26 +54,22 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrItems, setOcrItems] = useState([])
   const [ocrChecked, setOcrChecked] = useState([])
-  const [suggOpen, setSuggOpen] = useState(null) // index ของ row ที่เปิด dropdown
-  const [userSetCat, setUserSetCat] = useState(false) // true = user เลือกหมวดเองแล้ว ไม่ auto-override
+  const [suggOpen, setSuggOpen] = useState(null)
+  const [userSetCat, setUserSetCat] = useState(false)
 
   const itemHistory   = useMemo(() => [...new Set(expenses.map(e => e.item).filter(Boolean))], [expenses])
   const vendorHistory = useMemo(() => [...new Set([...VENDORS, ...expenses.map(e => e.vendor).filter(Boolean)])], [expenses])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  // 2-way calculation
-  // direction: 'ppu' = qty+amount→ppu, 'amount' = qty+ppu→amount
   const calcAuto = (qty, ppu, amount, disc, direction) => {
     const q = parseFloat(qty) || 0
     const p = parseFloat(ppu) || 0
     const a = parseFloat(amount) || 0
     const d = parseFloat(disc) || 0
     if (direction === 'amount' && q > 0 && p > 0) {
-      // qty + ppu → amount
       set('amount', Math.max(0, q * p - d).toFixed(2))
     } else if (direction === 'ppu' && q > 0 && a > 0) {
-      // qty + amount → ppu
       set('pricePerUnit', ((a + d) / q).toFixed(2))
     }
   }
@@ -117,7 +113,6 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
         reader.onload = () => {
           const img = new Image()
           img.onload = () => {
-            // ลด size ลงเพื่อความเร็ว — OCR ไม่ต้องการความละเอียดสูง
             const MAX = 1600
             let w = img.width, h = img.height
             if (w > MAX || h > MAX) {
@@ -138,10 +133,11 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
         reader.readAsDataURL(file)
       })
       const knownItems = itemHistory.slice(0, 40).join(', ')
+      const currentYear = new Date().getFullYear()
       const prompt = `คุณคือระบบอ่านใบเสร็จสำหรับร้านอาหาร${knownItems ? '\nรายการที่เคยซื้อ: ' + knownItems : ''}
 return JSON array เท่านั้น ห้ามมีข้อความอื่น ห้ามมี markdown
 format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"unit":"หน่วย","amount":ราคารวมก่อนหักส่วนลด,"discount":ส่วนลดเป็นตัวเลข,"vendor":"ชื่อร้าน","date":"YYYY-MM-DD"}]
-กฎ: item ตรงหรือใกล้เคียงรายการในระบบให้ใช้ชื่อนั้น, quantity/amount/discount เป็นตัวเลขไม่มีสัญลักษณ์, discount=0 ถ้าไม่มี, date YYYY-MM-DD หรือ null`
+กฎ: item ตรงหรือใกล้เคียงรายการในระบบให้ใช้ชื่อนั้น, quantity/amount/discount เป็นตัวเลขไม่มีสัญลักษณ์, discount=0 ถ้าไม่มี, date YYYY-MM-DD หรือ null, ปีใน date ต้องเป็น ${currentYear} เสมอ ห้ามใช้ปีอื่นโดยเด็ดขาด`
 
       const resp = await fetch('/api/gemini', {
         method: 'POST',
@@ -163,6 +159,13 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         category: guessExpCategory(it.item || ''),
         discount: it.discount || 0,
         ppu: it.quantity && it.amount ? Math.round(it.amount / it.quantity * 100) / 100 : '',
+        // ── FIX: ถ้า date ที่ Gemini return มาปีผิด ให้ใช้ todayStr แทน ──
+        date: (() => {
+          if (!it.date) return todayStr
+          const d = new Date(it.date)
+          if (isNaN(d.getTime()) || d.getFullYear() < currentYear - 1) return todayStr
+          return it.date
+        })(),
       })))
       setOcrChecked(items.map((_, i) => i))
     } catch (e) { notify('OCR Error: ' + e.message, 'error') }
@@ -183,7 +186,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         vendor: it.vendor || null,
         note: 'ocr',
       })).filter(it => it.amount > 0)
-    console.log('toSave:', toSave)
     if (!toSave.length) return notify('ไม่มีรายการที่เลือก', 'warning')
     const { data, error } = await supabase.from('expenses').insert(toSave).select()
     if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
@@ -193,14 +195,12 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
     notify(`บันทึก ${toSave.length} รายการเรียบร้อย`)
   }
 
-  // fuzzy match — หา suggestions จาก itemHistory ตาม keyword
   const getSuggestions = (keyword) => {
     if (!keyword || keyword.length < 1) return []
     const kw = keyword.toLowerCase().replace(/\s+/g, '')
     return itemHistory
       .filter(name => {
         const n = name.toLowerCase().replace(/\s+/g, '')
-        // exact substring หรือ character overlap สูง
         return n.includes(kw) || kw.includes(n) ||
           [...kw].filter(c => n.includes(c)).length >= Math.ceil(kw.length * 0.6)
       })
@@ -210,7 +210,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
   return (
     <div>
 
-      {/* OCR — 2 ปุ่ม: ถ่ายตอนนี้ + เลือกจากคลัง */}
+      {/* OCR buttons */}
       <div style={{ marginBottom: 14 }}>
         {ocrLoading ? (
           <div style={{
@@ -222,7 +222,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {/* ปุ่ม 1: เปิดกล้องโดยตรง */}
             <label style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: 'linear-gradient(135deg,#1a2e1a,#162e16)', border: '1px solid #4caf5044',
@@ -233,7 +232,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
               <input type="file" accept="image/*" capture="environment"
                 style={{ display: 'none' }} onChange={e => handleOCR(e.target.files[0])} />
             </label>
-            {/* ปุ่ม 2: เลือกจากคลังรูป */}
             <label style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: 'linear-gradient(135deg,#1a1a2e,#16213e)', border: '1px solid #4D96FF44',
@@ -332,7 +330,19 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                   {EXP_CATS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.key}</option>)}
                 </select>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, paddingLeft: 26 }}>
+
+              {/* ── แถวที่ 2: วันที่ + จำนวน + หน่วย + ฿/หน่วย ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 6, paddingLeft: 26 }}>
+                {/* วันที่ — แก้ได้ */}
+                <div>
+                  <div style={{ fontSize: 9, color: '#4D96FF', marginBottom: 2, fontWeight: 700 }}>📅 วันที่</div>
+                  <input
+                    type="date"
+                    value={it.date || todayStr}
+                    onChange={e => setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, date: e.target.value } : x))}
+                    style={{ ...INPUT, padding: '5px 8px', fontSize: 12, textAlign: 'center', color: '#4D96FF' }}
+                  />
+                </div>
                 {[['จำนวน', 'quantity'], ['หน่วย', 'unit'], ['฿/หน่วย', 'ppu']].map(([label, key]) => (
                   <div key={key}>
                     <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 2 }}>{label}</div>
@@ -341,6 +351,8 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                   </div>
                 ))}
               </div>
+
+              {/* แถวที่ 3: ยอด + ส่วนลด */}
               <div style={{ paddingLeft: 26, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 10, color: 'var(--dim)' }}>ยอด ฿</span>
                 <input type="number" value={it.amount ?? ''} onChange={e => setOcrItems(prev => prev.map((x, j) => j === i ? { ...x, amount: e.target.value } : x))}
@@ -350,6 +362,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                   style={{ ...INPUT, width: 60, fontSize: 13, fontWeight: 700, color: '#FF9F0A', padding: '6px 8px', textAlign: 'center' }} />
                 {it.vendor && <span style={{ fontSize: 10, color: 'var(--dim)', flexShrink: 0 }}>{it.vendor}</span>}
               </div>
+
               {/* net amount preview */}
               {(parseFloat(it.discount) > 0) && (
                 <div style={{ paddingLeft: 26, marginTop: 4, fontSize: 11, color: 'var(--success)' }}>
@@ -391,7 +404,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
             value={form.item}
             onChange={v => {
               set('item', v)
-              // auto-suggest category ถ้า user ยังไม่ได้เลือกเอง
               if (!userSetCat && v.length >= 2) {
                 const guessed = guessExpCategory(v)
                 if (guessed) set('category', guessed)
@@ -432,7 +444,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
           <input type="number" inputMode="decimal" value={form.amount}
             onChange={e => {
               set('amount', e.target.value)
-              // ถ้ามี qty แต่ยังไม่มี ppu → คำนวณ ppu ให้
               if (form.quantity && !form.pricePerUnit) {
                 calcAuto(form.quantity, form.pricePerUnit, e.target.value, form.discount, 'ppu')
               }
@@ -581,5 +592,3 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
     </div>
   )
 }
-
-// ─── BACKUP ──────────────────────────────────────────────────────────────────
