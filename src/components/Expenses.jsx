@@ -171,7 +171,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
 
   const saveOcrItems = async () => {
     const toSave = ocrItems
-      console.log('toSave:', toSave)
       .filter((_, i) => ocrChecked.includes(i))
       .map(it => ({
         date: it.date || todayStr,
@@ -184,6 +183,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         vendor: it.vendor || null,
         note: 'ocr',
       })).filter(it => it.amount > 0)
+    console.log('toSave:', toSave)
     if (!toSave.length) return notify('ไม่มีรายการที่เลือก', 'warning')
     const { data, error } = await supabase.from('expenses').insert(toSave).select()
     if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
