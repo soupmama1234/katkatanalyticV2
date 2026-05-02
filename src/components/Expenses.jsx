@@ -56,9 +56,30 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
   const [ocrChecked, setOcrChecked] = useState([])
   const [suggOpen, setSuggOpen] = useState(null)
   const [userSetCat, setUserSetCat] = useState(false)
+  // hint ราคาล่าสุด ที่ auto-fill มา
+  const [lastPriceHint, setLastPriceHint] = useState(null) // { price_per_unit, unit, vendor, date }
 
   const itemHistory   = useMemo(() => [...new Set(expenses.map(e => e.item).filter(Boolean))], [expenses])
   const vendorHistory = useMemo(() => [...new Set([...VENDORS, ...expenses.map(e => e.vendor).filter(Boolean)])], [expenses])
+
+  // ── lastPriceMap: ราคา/หน่วยล่าสุดของแต่ละ item ──────────────────────────
+  const lastPriceMap = useMemo(() => {
+    const map = {}
+    // sort date descending → เจอแรก = ล่าสุด
+    const sorted = [...expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    sorted.forEach(e => {
+      if (!e.item || !e.price_per_unit) return
+      if (!map[e.item]) {
+        map[e.item] = {
+          price_per_unit: e.price_per_unit,
+          unit: e.unit || '',
+          vendor: e.vendor || '',
+          date: e.date || '',
+        }
+      }
+    })
+    return map
+  }, [expenses])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -71,6 +92,36 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
       set('amount', Math.max(0, q * p - d).toFixed(2))
     } else if (direction === 'ppu' && q > 0 && a > 0) {
       set('pricePerUnit', ((a + d) / q).toFixed(2))
+    }
+  }
+
+  // ── handler เมื่อ user เลือก item จาก suggestion ──────────────────────────
+  const handleItemSelect = (name) => {
+    set('item', name)
+    if (!userSetCat) set('category', guessExpCategory(name))
+
+    const last = lastPriceMap[name]
+    if (last) {
+      // auto-fill pricePerUnit และ unit
+      setForm(prev => {
+        const newPpu = last.price_per_unit
+        const newUnit = last.unit || prev.unit
+        const newVendor = prev.vendor || last.vendor || ''
+        // ถ้ามี quantity อยู่แล้ว → calc amount ด้วย
+        const qty = parseFloat(prev.quantity) || 0
+        const newAmount = qty > 0 ? (qty * newPpu).toFixed(2) : prev.amount
+        return {
+          ...prev,
+          item: name,
+          pricePerUnit: String(newPpu),
+          unit: newUnit,
+          vendor: newVendor,
+          amount: newAmount,
+        }
+      })
+      setLastPriceHint(last)
+    } else {
+      setLastPriceHint(null)
     }
   }
 
@@ -98,6 +149,7 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
       setExpenses(prev => [data, ...prev])
       setForm(emptyForm)
       setUserSetCat(false)
+      setLastPriceHint(null)
     } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
     setSaving(false)
   }
@@ -159,7 +211,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         category: guessExpCategory(it.item || ''),
         discount: it.discount || 0,
         ppu: it.quantity && it.amount ? Math.round(it.amount / it.quantity * 100) / 100 : '',
-        // ── FIX: ถ้า date ที่ Gemini return มาปีผิด ให้ใช้ todayStr แทน ──
         date: (() => {
           if (!it.date) return todayStr
           const d = new Date(it.date)
@@ -331,9 +382,8 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                 </select>
               </div>
 
-              {/* ── แถวที่ 2: วันที่ + จำนวน + หน่วย + ฿/หน่วย ── */}
+              {/* แถวที่ 2: วันที่ + จำนวน + หน่วย + ฿/หน่วย */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 6, paddingLeft: 26 }}>
-                {/* วันที่ — แก้ได้ */}
                 <div>
                   <div style={{ fontSize: 9, color: '#4D96FF', marginBottom: 2, fontWeight: 700 }}>📅 วันที่</div>
                   <input
@@ -363,7 +413,6 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
                 {it.vendor && <span style={{ fontSize: 10, color: 'var(--dim)', flexShrink: 0 }}>{it.vendor}</span>}
               </div>
 
-              {/* net amount preview */}
               {(parseFloat(it.discount) > 0) && (
                 <div style={{ paddingLeft: 26, marginTop: 4, fontSize: 11, color: 'var(--success)' }}>
                   สุทธิ ฿{Math.max(0, (parseFloat(it.amount) || 0) - (parseFloat(it.discount) || 0)).toFixed(2)}
@@ -404,19 +453,55 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
             value={form.item}
             onChange={v => {
               set('item', v)
+              // clear hint ถ้า user พิมพ์เองแทนที่จะเลือก
+              setLastPriceHint(null)
               if (!userSetCat && v.length >= 2) {
                 const guessed = guessExpCategory(v)
                 if (guessed) set('category', guessed)
               }
             }}
-            suggestions={itemHistory} placeholder="เช่น หมูสันนอก"
+            onSelect={handleItemSelect}
+            suggestions={itemHistory}
+            placeholder="เช่น หมูสันนอก"
           />
+          {/* ── hint ราคาล่าสุด ── */}
+          {lastPriceHint && (
+            <div style={{
+              marginTop: 6, padding: '7px 12px',
+              background: 'rgba(77,150,255,0.08)',
+              border: '1px solid rgba(77,150,255,0.25)',
+              borderRadius: 8,
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 12,
+            }}>
+              <span style={{ fontSize: 14 }}>💡</span>
+              <span style={{ color: '#4D96FF', fontWeight: 700 }}>
+                ราคาล่าสุด ฿{lastPriceHint.price_per_unit}/{lastPriceHint.unit || 'หน่วย'}
+              </span>
+              {lastPriceHint.vendor && (
+                <span style={{ color: 'var(--dim)' }}>· {lastPriceHint.vendor}</span>
+              )}
+              {lastPriceHint.date && (
+                <span style={{ color: 'var(--dim)', marginLeft: 'auto' }}>
+                  {new Date(lastPriceHint.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
+                </span>
+              )}
+              <button
+                onClick={() => setLastPriceHint(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}
+              >✕</button>
+            </div>
+          )}
         </Field>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="จำนวน">
             <input type="number" inputMode="decimal" value={form.quantity}
-              onChange={e => { set('quantity', e.target.value); calcAuto(e.target.value, form.pricePerUnit, form.amount, form.discount, form.pricePerUnit ? 'amount' : 'ppu') }}
+              onChange={e => {
+                set('quantity', e.target.value)
+                // ถ้ามี pricePerUnit อยู่แล้ว → calc amount อัตโนมัติ
+                calcAuto(e.target.value, form.pricePerUnit, form.amount, form.discount, form.pricePerUnit ? 'amount' : 'ppu')
+              }}
               style={INPUT} placeholder="0" />
           </Field>
           <Field label="หน่วย">
@@ -436,7 +521,10 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
 
         <Field label="ราคา/หน่วย ฿">
           <input type="number" inputMode="decimal" value={form.pricePerUnit}
-            onChange={e => { set('pricePerUnit', e.target.value); calcAuto(form.quantity, e.target.value, form.amount, form.discount, 'amount') }}
+            onChange={e => {
+              set('pricePerUnit', e.target.value)
+              calcAuto(form.quantity, e.target.value, form.amount, form.discount, 'amount')
+            }}
             style={{ ...INPUT, color: 'var(--primary)', fontWeight: 700, fontSize: 16 }} placeholder="0" />
         </Field>
 
