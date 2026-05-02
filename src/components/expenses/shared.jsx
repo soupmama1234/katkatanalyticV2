@@ -38,7 +38,18 @@ function fuzzyScore(name, kw) {
   return Math.round(overlap / k.length * 60)
 }
 
-export function AutoComplete({ value, onChange, suggestions, placeholder }) {
+/**
+ * AutoComplete — input พร้อม dropdown suggestion
+ *
+ * Props:
+ *   value        : string
+ *   onChange     : (value: string) => void  — เรียกเมื่อ user พิมพ์
+ *   onSelect     : (value: string) => void  — เรียกเมื่อ user คลิก suggestion (optional)
+ *                  ถ้าไม่ส่ง onSelect จะ fallback ไปใช้ onChange แทน
+ *   suggestions  : string[]
+ *   placeholder  : string
+ */
+export function AutoComplete({ value, onChange, onSelect, suggestions, placeholder }) {
   const [open, setOpen] = useState(false)
   const kw = (value || '').trim()
   const matches = kw.length === 0
@@ -49,6 +60,15 @@ export function AutoComplete({ value, onChange, suggestions, placeholder }) {
         .sort((a, b) => b.score - a.score)
         .slice(0, 8)
         .map(({ s }) => s)
+
+  const handleSelect = (m) => {
+    if (onSelect) {
+      onSelect(m)
+    } else {
+      onChange(m)
+    }
+  }
+
   return (
     <div style={{ position: 'relative' }}>
       <input
@@ -68,7 +88,7 @@ export function AutoComplete({ value, onChange, suggestions, placeholder }) {
           {matches.map(m => (
             <div
               key={m}
-              onMouseDown={() => onChange(m)}
+              onMouseDown={() => handleSelect(m)}
               style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #2a2a2a' }}
             >
               {m}
