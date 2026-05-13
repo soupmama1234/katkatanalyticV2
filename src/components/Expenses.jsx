@@ -12,7 +12,7 @@ import ActionNotes from './expenses/ActionNotes.jsx'
 import Backup      from './expenses/Backup.jsx'
 import Forecast    from './expenses/Forecast.jsx'
 
-const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'Backup']
+const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Backup']
 
 
 export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes }) {
