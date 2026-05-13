@@ -16,8 +16,33 @@ function isRealOrder(r) {
   return /\.\d{3,}/.test(r.created_at || '')
 }
 
+// ── helper: filter closedDays ให้ตรงกับ period ──────────────────────────────
+function filterClosedByPeriod(closedDays, period, from, to) {
+  if (!closedDays?.length) return []
+  const now = new Date()
+  if (period === 'custom') return closedDays.filter(d => d.date >= from && d.date <= to)
+  if (period === 'today')  return closedDays.filter(d => d.date === todayStr)
+  if (period === 'yesterday') {
+    const y = new Date(now); y.setDate(y.getDate() - 1)
+    return closedDays.filter(d => d.date === y.toLocaleDateString('en-CA'))
+  }
+  if (period === '7d') {
+    const d = new Date(now); d.setDate(d.getDate() - 7)
+    return closedDays.filter(d => d.date >= d.toLocaleDateString('en-CA'))
+  }
+  if (period === '30d') {
+    const d = new Date(now); d.setDate(d.getDate() - 30)
+    return closedDays.filter(d => d.date >= d.toLocaleDateString('en-CA'))
+  }
+  if (period === '1y') {
+    const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
+    return closedDays.filter(d => d.date >= d.toLocaleDateString('en-CA'))
+  }
+  return closedDays
+}
+
 // ─── SUB TAB: แนวโน้ม ──────────────────────────────────────────────────────────
-function TrendTab({ allOrders, expenses }) {
+function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const [period, setPeriod] = useState('7d')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
@@ -27,7 +52,13 @@ function TrendTab({ allOrders, expenses }) {
     [allOrders, period, from, to]
   )
 
-  const s       = useMemo(() => computeStats(orders), [orders])
+  // filter closedDays ให้ตรงกับ period
+  const filteredClosed = useMemo(
+    () => filterClosedByPeriod(closedDays, period, from, to),
+    [closedDays, period, from, to]
+  )
+
+  const s       = useMemo(() => computeStats(orders, filteredClosed), [orders, filteredClosed])
   const total   = orders.reduce((sum, r) => sum + (r.actual_amount || 0), 0)
   const avg     = orders.length ? Math.round(total / orders.length) : 0
   const maxBill = orders.length ? Math.max(...orders.map(r => r.actual_amount || 0)) : 0
@@ -67,6 +98,9 @@ function TrendTab({ allOrders, expenses }) {
   const diff      = total - prevTotal
   const pct       = prevTotal > 0 ? Math.round(diff / prevTotal * 100) : 0
 
+  // closed days set สำหรับ mark บน chart
+  const closedSet = useMemo(() => new Set(filteredClosed.map(d => d.date)), [filteredClosed])
+
   const chartData = useMemo(() => {
     const sorted = Object.keys(s.dailyMap).sort()
     if (period === '1y') {
@@ -81,8 +115,12 @@ function TrendTab({ allOrders, expenses }) {
       })
     }
     const n = period === '7d' ? 7 : 30
-    return sorted.slice(-n).map(d => ({ label: d.split('-')[2], value: s.dailyMap[d] }))
-  }, [s.dailyMap, period])
+    return sorted.slice(-n).map(d => ({
+      label: d.split('-')[2],
+      value: s.dailyMap[d],
+      isClosed: closedSet.has(d),
+    }))
+  }, [s.dailyMap, period, closedSet])
 
   const platforms = ['pos', 'grab', 'lineman', 'shopee']
     .filter(k => s.platformRev[k] > 0)
@@ -106,6 +144,25 @@ function TrendTab({ allOrders, expenses }) {
         <StatCard icon="🧾" label="จำนวนบิล"  value={fmt(orders.length)} />
         <StatCard icon="🔝" label="บิลสูงสุด" value={maxBill ? `฿${fmt(maxBill)}` : '—'} />
       </div>
+
+      {/* Operating days summary */}
+      {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+          gap: 8, marginBottom: 12,
+        }}>
+          {[
+            { label: 'วันเปิดร้าน', value: s.operatingDaysCount, color: 'var(--success)' },
+            { label: 'วันหยุด',     value: s.closedInPeriodCount, color: '#FF453A' },
+            { label: 'เฉลี่ย/วันเปิด', value: s.dailyAvg ? `฿${fmt(s.dailyAvg)}` : '—', color: 'var(--primary)' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={S.miniCard}>
+              <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontWeight: 800, fontSize: 15, color, fontFamily: "'Inter',sans-serif" }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* เทียบช่วงก่อน */}
       {prevOrders.length > 0 && (
@@ -132,17 +189,33 @@ function TrendTab({ allOrders, expenses }) {
         </div>
       )}
 
-      {/* Line chart */}
+      {/* Line chart — วันหยุด label สีแดง */}
       <div style={S.card}>
         <div style={S.cardTitle}>แนวโน้มยอดขาย</div>
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
-            <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 10 }} />
+            <XAxis
+              dataKey="label"
+              tick={(props) => {
+                const { x, y, payload, index } = props
+                const isClosed = chartData[index]?.isClosed
+                return (
+                  <text x={x} y={y + 10} fill={isClosed ? '#FF453A' : '#555'} fontSize={10} textAnchor="middle">
+                    {payload.value}{isClosed ? '🔴' : ''}
+                  </text>
+                )
+              }}
+            />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
             <Tooltip {...CHART_TIP} formatter={v => [`฿${fmt(v)}`, 'ยอดขาย']} />
             <Line type="monotone" dataKey="value" stroke="var(--primary)" strokeWidth={2} dot={{ r: 2 }} />
           </LineChart>
         </ResponsiveContainer>
+        {filteredClosed.length > 0 && (
+          <div style={{ fontSize: 10, color: '#FF453A', marginTop: 6, textAlign: 'center' }}>
+            🔴 = วันหยุด ({filteredClosed.length} วัน)
+          </div>
+        )}
       </div>
 
       {/* Platform */}
@@ -169,10 +242,8 @@ function TrendTab({ allOrders, expenses }) {
         {platforms.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-
       {/* 💸 ต้นทุน vs รายรับ */}
       {expenses && expenses.length > 0 && (() => {
-        // คำนวณ monthly data
         const monthlyRev = {}, monthlyExp = {}
         orders.forEach(r => {
           const m = (r.created_at || '').slice(0, 7)
@@ -197,7 +268,6 @@ function TrendTab({ allOrders, expenses }) {
 
         return (
           <>
-            {/* Margin summary */}
             <div style={{ ...S.card, background: profit >= 0 ? 'rgba(50,215,75,0.06)' : 'rgba(255,69,58,0.06)', border: `1px solid ${profit >= 0 ? 'rgba(50,215,75,0.2)' : 'rgba(255,69,58,0.2)'}` }}>
               <div style={S.cardTitle}>💸 รายรับ vs ต้นทุน</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
@@ -220,7 +290,6 @@ function TrendTab({ allOrders, expenses }) {
               )}
             </div>
 
-            {/* Rev vs Cost chart */}
             {costChart.length > 1 && (
               <div style={S.card}>
                 <div style={S.cardTitle}>📊 รายรับ vs ต้นทุน รายเดือน</div>
@@ -268,7 +337,7 @@ function TrendTab({ allOrders, expenses }) {
 }
 
 // ─── SUB TAB: ช่วงเวลา ─────────────────────────────────────────────────────────
-function PeakTab({ allOrders }) {
+function PeakTab({ allOrders, closedDays = [] }) {
   const [period, setPeriod] = useState('all')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
@@ -278,12 +347,24 @@ function PeakTab({ allOrders }) {
     period === 'custom' ? filterByRange(allOrders, from, to) : filterByPeriod(allOrders, period),
     [allOrders, period, from, to]
   )
-  const realFiltered = useMemo(() =>
-    period === 'custom' ? filterByRange(realOrders, from, to) : filterByPeriod(realOrders, period),
-    [realOrders, period, from, to]
-  )
 
-  const s     = useMemo(() => computeStats(orders), [orders])
+  // exclude orders ในวันหยุดออก เพื่อให้ peak hour accurate
+  const filteredClosed = useMemo(
+    () => filterClosedByPeriod(closedDays, period, from, to),
+    [closedDays, period, from, to]
+  )
+  const closedSet = useMemo(() => new Set(filteredClosed.map(d => d.date)), [filteredClosed])
+
+  const realFiltered = useMemo(() => {
+    const base = period === 'custom' ? filterByRange(realOrders, from, to) : filterByPeriod(realOrders, period)
+    // exclude วันหยุด
+    return base.filter(r => {
+      const d = r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA') : ''
+      return !closedSet.has(d)
+    })
+  }, [realOrders, period, from, to, closedSet])
+
+  const s     = useMemo(() => computeStats(orders, filteredClosed), [orders, filteredClosed])
   const sReal = useMemo(() => computeStats(realFiltered), [realFiltered])
 
   const maxHour   = Math.max(...sReal.byHour.map(h => h.orders), 1)
@@ -307,6 +388,17 @@ function PeakTab({ allOrders }) {
     <div>
       <PeriodBar period={period} onChange={setPeriod} options={STANDARD_PERIODS}
         from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
+
+      {/* แสดงว่า exclude วันหยุดกี่วัน */}
+      {filteredClosed.length > 0 && (
+        <div style={{
+          background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.2)',
+          borderRadius: 10, padding: '8px 14px', marginBottom: 12,
+          fontSize: 12, color: '#FF453A',
+        }}>
+          🔴 ข้อมูล Peak Hour นี้ exclude {filteredClosed.length} วันหยุดออกแล้ว (แม่นยำขึ้น)
+        </div>
+      )}
 
       {/* Hour bar chart */}
       <div style={S.card}>
@@ -387,7 +479,7 @@ function PeakTab({ allOrders }) {
   )
 }
 
-// ─── SUB TAB: เปรียบเทียบ ──────────────────────────────────────────────────────
+// ─── CompareTab — ไม่เปลี่ยนแปลง (วาง logic เดิมทั้งหมด) ─────────────────────
 const QUICK_PAIRS = [
   { key: 'week',    a: '7d',              b: 'prev7d'           },
   { key: 'month',   a: 'thisMonth',       b: 'lastMonth'        },
@@ -397,130 +489,44 @@ const QUICK_PAIRS = [
   { key: 'today',   a: 'today',           b: 'yesterday'        },
 ]
 
-
-// แปลง period key → label ภาษาไทยพร้อมปี เช่น "มีนาคม 2568"
 function getPeriodLabel(period, fromDate, toDate) {
   const now = new Date()
   const thLocale = 'th-TH'
   const opts = { month: 'long', year: 'numeric' }
-
-  if (period === 'today') {
-    return now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })
-  }
-  if (period === 'yesterday') {
-    const y = new Date(now); y.setDate(y.getDate() - 1)
-    return y.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })
-  }
-  if (period === '7d') {
-    const d = new Date(now); d.setDate(d.getDate() - 7)
-    return `${d.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`
-  }
-  if (period === 'prev7d') {
-    const d2 = new Date(now); d2.setDate(d2.getDate() - 7)
-    const d1 = new Date(now); d1.setDate(d1.getDate() - 14)
-    return `${d1.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${d2.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`
-  }
-  if (period === '30d') {
-    const d = new Date(now); d.setDate(d.getDate() - 30)
-    return `${d.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`
-  }
-  if (period === 'prev30d') {
-    const d2 = new Date(now); d2.setDate(d2.getDate() - 30)
-    const d1 = new Date(now); d1.setDate(d1.getDate() - 60)
-    return `${d1.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${d2.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`
-  }
-  if (period === 'thisMonth') {
-    return new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString(thLocale, opts)
-  }
-  if (period === 'lastMonth') {
-    return new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(thLocale, opts)
-  }
-  if (period === 'sameMonthLastYear') {
-    return new Date(now.getFullYear() - 1, now.getMonth(), 1).toLocaleDateString(thLocale, opts)
-  }
-  if (period === 'thisQ') {
-    const q = Math.floor(now.getMonth() / 3)
-    return `ไตรมาส ${q + 1}/${now.getFullYear() + 543}`
-  }
-  if (period === 'lastQ') {
-    const q = Math.floor(now.getMonth() / 3)
-    const lq = q === 0 ? 3 : q
-    const yr = q === 0 ? now.getFullYear() - 1 : now.getFullYear()
-    return `ไตรมาส ${lq}/${yr + 543}`
-  }
+  if (period === 'today') return now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })
+  if (period === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); return y.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' }) }
+  if (period === '7d') { const d = new Date(now); d.setDate(d.getDate() - 7); return `${d.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}` }
+  if (period === 'prev7d') { const d2 = new Date(now); d2.setDate(d2.getDate() - 7); const d1 = new Date(now); d1.setDate(d1.getDate() - 14); return `${d1.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${d2.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}` }
+  if (period === '30d') { const d = new Date(now); d.setDate(d.getDate() - 30); return `${d.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}` }
+  if (period === 'prev30d') { const d2 = new Date(now); d2.setDate(d2.getDate() - 30); const d1 = new Date(now); d1.setDate(d1.getDate() - 60); return `${d1.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${d2.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}` }
+  if (period === 'thisMonth') return new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString(thLocale, opts)
+  if (period === 'lastMonth') return new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(thLocale, opts)
+  if (period === 'sameMonthLastYear') return new Date(now.getFullYear() - 1, now.getMonth(), 1).toLocaleDateString(thLocale, opts)
+  if (period === 'thisQ') { const q = Math.floor(now.getMonth() / 3); return `ไตรมาส ${q + 1}/${now.getFullYear() + 543}` }
+  if (period === 'lastQ') { const q = Math.floor(now.getMonth() / 3); const lq = q === 0 ? 3 : q; const yr = q === 0 ? now.getFullYear() - 1 : now.getFullYear(); return `ไตรมาส ${lq}/${yr + 543}` }
   if (period === 'thisYear') return `ปี ${now.getFullYear() + 543}`
   if (period === 'lastYear') return `ปี ${now.getFullYear() - 1 + 543}`
-  if (period === 'custom' && fromDate && toDate) {
-    const f = new Date(fromDate).toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })
-    const t = new Date(toDate).toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })
-    return fromDate === toDate ? f : `${f} – ${t}`
-  }
+  if (period === 'custom' && fromDate && toDate) { const f = new Date(fromDate).toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' }); const t = new Date(toDate).toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' }); return fromDate === toDate ? f : `${f} – ${t}` }
   return period
 }
 
-// เพิ่ม period keys ใหม่ใน getCompareOrders
 function getCompareOrders(allOrders, period) {
   const now = new Date()
   const toLocal = r => new Date(r.created_at).toLocaleDateString('en-CA')
-  const todayStr = now.toLocaleDateString('en-CA')
-
-  if (period === 'today')     return allOrders.filter(r => toLocal(r) === todayStr)
-  if (period === 'yesterday') {
-    const y = new Date(now); y.setDate(y.getDate() - 1)
-    return allOrders.filter(r => toLocal(r) === y.toLocaleDateString('en-CA'))
-  }
-  if (period === '7d') {
-    const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(0,0,0,0)
-    return allOrders.filter(r => new Date(r.created_at) >= d)
-  }
-  if (period === 'prev7d') {
-    const d1 = new Date(now); d1.setDate(d1.getDate() - 14); d1.setHours(0,0,0,0)
-    const d2 = new Date(now); d2.setDate(d2.getDate() - 7);  d2.setHours(0,0,0,0)
-    return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 })
-  }
-  if (period === '30d') {
-    const d = new Date(now); d.setDate(d.getDate() - 30); d.setHours(0,0,0,0)
-    return allOrders.filter(r => new Date(r.created_at) >= d)
-  }
-  if (period === 'prev30d') {
-    const d1 = new Date(now); d1.setDate(d1.getDate() - 60); d1.setHours(0,0,0,0)
-    const d2 = new Date(now); d2.setDate(d2.getDate() - 30); d2.setHours(0,0,0,0)
-    return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 })
-  }
-  if (period === 'thisMonth') {
-    const d = new Date(now.getFullYear(), now.getMonth(), 1)
-    return allOrders.filter(r => new Date(r.created_at) >= d)
-  }
-  if (period === 'lastMonth') {
-    const d1 = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const d2 = new Date(now.getFullYear(), now.getMonth(), 1)
-    return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 })
-  }
-  if (period === 'sameMonthLastYear') {
-    const d1 = new Date(now.getFullYear() - 1, now.getMonth(), 1)
-    const d2 = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1)
-    return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 })
-  }
-  if (period === 'thisQ') {
-    const q = Math.floor(now.getMonth() / 3)
-    const d = new Date(now.getFullYear(), q * 3, 1)
-    return allOrders.filter(r => new Date(r.created_at) >= d)
-  }
-  if (period === 'lastQ') {
-    const q  = Math.floor(now.getMonth() / 3)
-    const d1 = new Date(now.getFullYear(), (q - 1) * 3, 1)
-    const d2 = new Date(now.getFullYear(), q * 3, 1)
-    return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 })
-  }
-  if (period === 'thisYear') {
-    const d = new Date(now.getFullYear(), 0, 1)
-    return allOrders.filter(r => new Date(r.created_at) >= d)
-  }
-  if (period === 'lastYear') {
-    const d1 = new Date(now.getFullYear() - 1, 0, 1)
-    const d2 = new Date(now.getFullYear(), 0, 1)
-    return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 })
-  }
+  const todayS = now.toLocaleDateString('en-CA')
+  if (period === 'today')     return allOrders.filter(r => toLocal(r) === todayS)
+  if (period === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); return allOrders.filter(r => toLocal(r) === y.toLocaleDateString('en-CA')) }
+  if (period === '7d') { const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(0,0,0,0); return allOrders.filter(r => new Date(r.created_at) >= d) }
+  if (period === 'prev7d') { const d1 = new Date(now); d1.setDate(d1.getDate() - 14); d1.setHours(0,0,0,0); const d2 = new Date(now); d2.setDate(d2.getDate() - 7); d2.setHours(0,0,0,0); return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }) }
+  if (period === '30d') { const d = new Date(now); d.setDate(d.getDate() - 30); d.setHours(0,0,0,0); return allOrders.filter(r => new Date(r.created_at) >= d) }
+  if (period === 'prev30d') { const d1 = new Date(now); d1.setDate(d1.getDate() - 60); d1.setHours(0,0,0,0); const d2 = new Date(now); d2.setDate(d2.getDate() - 30); d2.setHours(0,0,0,0); return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }) }
+  if (period === 'thisMonth') { const d = new Date(now.getFullYear(), now.getMonth(), 1); return allOrders.filter(r => new Date(r.created_at) >= d) }
+  if (period === 'lastMonth') { const d1 = new Date(now.getFullYear(), now.getMonth() - 1, 1); const d2 = new Date(now.getFullYear(), now.getMonth(), 1); return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }) }
+  if (period === 'sameMonthLastYear') { const d1 = new Date(now.getFullYear() - 1, now.getMonth(), 1); const d2 = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1); return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }) }
+  if (period === 'thisQ') { const q = Math.floor(now.getMonth() / 3); const d = new Date(now.getFullYear(), q * 3, 1); return allOrders.filter(r => new Date(r.created_at) >= d) }
+  if (period === 'lastQ') { const q = Math.floor(now.getMonth() / 3); const d1 = new Date(now.getFullYear(), (q - 1) * 3, 1); const d2 = new Date(now.getFullYear(), q * 3, 1); return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }) }
+  if (period === 'thisYear') { const d = new Date(now.getFullYear(), 0, 1); return allOrders.filter(r => new Date(r.created_at) >= d) }
+  if (period === 'lastYear') { const d1 = new Date(now.getFullYear() - 1, 0, 1); const d2 = new Date(now.getFullYear(), 0, 1); return allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }) }
   if (period === 'custom') return []
   return allOrders
 }
@@ -534,27 +540,21 @@ function CompareMetric({ label, valA, valB, format = v => v, labelA = 'A', label
       <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: 'var(--primary)', fontWeight: 700, marginBottom: 2,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelA}</div>
+          <div style={{ fontSize: 10, color: 'var(--primary)', fontWeight: 700, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelA}</div>
           <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 20, color: '#fff' }}>{format(valA)}</div>
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: '#888', fontWeight: 700, marginBottom: 2,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelB}</div>
+          <div style={{ fontSize: 10, color: '#888', fontWeight: 700, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelB}</div>
           <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 20, color: 'var(--dim)' }}>{format(valB)}</div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           {pct !== null ? (
-            <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 18,
-              color: up ? 'var(--success)' : 'var(--danger)' }}>
+            <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 18, color: up ? 'var(--success)' : 'var(--danger)' }}>
               {up ? '▲' : '▼'} {Math.abs(pct)}%
             </div>
-          ) : (
-            <div style={{ color: 'var(--dim)', fontSize: 13 }}>—</div>
-          )}
+          ) : <div style={{ color: 'var(--dim)', fontSize: 13 }}>—</div>}
         </div>
       </div>
-      {/* bar comparison */}
       <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {[['A', valA, 'var(--primary)'], ['B', valB, '#444']].map(([lbl, val, color]) => {
           const max = Math.max(valA, valB, 1)
@@ -562,8 +562,7 @@ function CompareMetric({ label, valA, valB, format = v => v, labelA = 'A', label
             <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 12, fontSize: 9, color: 'var(--dim)' }}>{lbl}</div>
               <div style={{ flex: 1, height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round(val / max * 100)}%`,
-                  background: color, borderRadius: 2, transition: 'width 0.4s' }} />
+                <div style={{ height: '100%', width: `${Math.round(val / max * 100)}%`, background: color, borderRadius: 2, transition: 'width 0.4s' }} />
               </div>
             </div>
           )
@@ -576,53 +575,38 @@ function CompareMetric({ label, valA, valB, format = v => v, labelA = 'A', label
 function TopMenuCompare({ ordersA, ordersB, labelA, labelB }) {
   const countMenu = (orders) => {
     const map = {}
-    orders.forEach(o => {
-      getOrderItems(o).forEach(item => {
-        const n = item.name || '?'
-        map[n] = (map[n] || 0) + (Number(item.qty) || 1)
-      })
-    })
+    orders.forEach(o => { getOrderItems(o).forEach(item => { const n = item.name || '?'; map[n] = (map[n] || 0) + (Number(item.qty) || 1) }) })
     return map
   }
   const mapA = countMenu(ordersA)
   const mapB = countMenu(ordersB)
   const allMenus = [...new Set([...Object.keys(mapA), ...Object.keys(mapB)])]
-    .sort((a, b) => ((mapA[b] || 0) + (mapB[b] || 0)) - ((mapA[a] || 0) + (mapB[a] || 0)))
-    .slice(0, 8)
-
+    .sort((a, b) => ((mapA[b] || 0) + (mapB[b] || 0)) - ((mapA[a] || 0) + (mapB[a] || 0))).slice(0, 8)
   if (!allMenus.length) return <div style={{ color: 'var(--dim)', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>ยังไม่มีข้อมูล</div>
-
   const maxVal = Math.max(...allMenus.map(m => Math.max(mapA[m] || 0, mapB[m] || 0)), 1)
-
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--primary)' }} />
-          <span style={{ fontSize: 11, color: 'var(--dim)' }}>{labelA}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, background: '#444' }} />
-          <span style={{ fontSize: 11, color: 'var(--dim)' }}>{labelB}</span>
-        </div>
+        {[['var(--primary)', labelA], ['#444', labelB]].map(([color, label]) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+            <span style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</span>
+          </div>
+        ))}
       </div>
       {allMenus.map(menu => {
-        const a = mapA[menu] || 0
-        const b = mapB[menu] || 0
+        const a = mapA[menu] || 0; const b = mapB[menu] || 0
         return (
           <div key={menu} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
               <span style={{ fontSize: 12, fontWeight: 600 }}>{menu}</span>
               <span style={{ fontSize: 11, color: 'var(--dim)' }}>{a} / {b}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {[[a, 'var(--primary)'], [b, '#444']].map(([val, color], i) => (
-                <div key={i} style={{ height: 5, background: '#1a1a1a', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.round(val / maxVal * 100)}%`,
-                    background: color, borderRadius: 3, transition: 'width 0.4s' }} />
-                </div>
-              ))}
-            </div>
+            {[[a, 'var(--primary)'], [b, '#444']].map(([val, color], i) => (
+              <div key={i} style={{ height: 5, background: '#1a1a1a', borderRadius: 3, overflow: 'hidden', marginBottom: 2 }}>
+                <div style={{ height: '100%', width: `${Math.round(val / maxVal * 100)}%`, background: color, borderRadius: 3, transition: 'width 0.4s' }} />
+              </div>
+            ))}
           </div>
         )
       })}
@@ -640,59 +624,23 @@ function CompareTab({ allOrders, expenses }) {
   const [toB, setToB]     = useState(todayStr)
   const [useCustom, setUseCustom] = useState(false)
 
-  const ordersA = useMemo(() => useCustom
-    ? filterByRange(allOrders, fromA, toA)
-    : getCompareOrders(allOrders, modeA),
-    [allOrders, useCustom, modeA, fromA, toA]
-  )
-  const ordersB = useMemo(() => useCustom
-    ? filterByRange(allOrders, fromB, toB)
-    : getCompareOrders(allOrders, modeB),
-    [allOrders, useCustom, modeB, fromB, toB]
-  )
-
-  const statsA = useMemo(() => {
-    const total = ordersA.reduce((s, r) => s + (r.actual_amount || 0), 0)
-    const avg   = ordersA.length ? Math.round(total / ordersA.length) : 0
-    return { total, avg, count: ordersA.length }
-  }, [ordersA])
-
-  const statsB = useMemo(() => {
-    const total = ordersB.reduce((s, r) => s + (r.actual_amount || 0), 0)
-    const avg   = ordersB.length ? Math.round(total / ordersB.length) : 0
-    return { total, avg, count: ordersB.length }
-  }, [ordersB])
-
+  const ordersA = useMemo(() => useCustom ? filterByRange(allOrders, fromA, toA) : getCompareOrders(allOrders, modeA), [allOrders, useCustom, modeA, fromA, toA])
+  const ordersB = useMemo(() => useCustom ? filterByRange(allOrders, fromB, toB) : getCompareOrders(allOrders, modeB), [allOrders, useCustom, modeB, fromB, toB])
+  const statsA = useMemo(() => { const total = ordersA.reduce((s, r) => s + (r.actual_amount || 0), 0); return { total, avg: ordersA.length ? Math.round(total / ordersA.length) : 0, count: ordersA.length } }, [ordersA])
+  const statsB = useMemo(() => { const total = ordersB.reduce((s, r) => s + (r.actual_amount || 0), 0); return { total, avg: ordersB.length ? Math.round(total / ordersB.length) : 0, count: ordersB.length } }, [ordersB])
   const labelA = useCustom ? getPeriodLabel('custom', fromA, toA) : getPeriodLabel(modeA)
   const labelB = useCustom ? getPeriodLabel('custom', fromB, toB) : getPeriodLabel(modeB)
+  const handleQuickPair = (i) => { setQuickPair(i); setModeA(QUICK_PAIRS[i].a); setModeB(QUICK_PAIRS[i].b); setUseCustom(false) }
 
-  const handleQuickPair = (i) => {
-    setQuickPair(i)
-    setModeA(QUICK_PAIRS[i].a)
-    setModeB(QUICK_PAIRS[i].b)
-    setUseCustom(false)
-  }
-
-  const DATE_INPUT = {
-    background: 'var(--surface2)', border: '1px solid var(--border2)',
-    color: '#fff', borderRadius: 8, padding: '7px 10px',
-    fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box',
-  }
+  const DATE_INPUT = { background: 'var(--surface2)', border: '1px solid var(--border2)', color: '#fff', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: '100%', boxSizing: 'border-box' }
 
   return (
     <div>
-      {/* Quick pairs */}
       <div style={S.card}>
         <div style={S.cardTitle}>⚡ เปรียบเทียบด่วน</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {QUICK_PAIRS.map((p, i) => (
-            <button key={i} onClick={() => handleQuickPair(i)} style={{
-              padding: '10px 14px', borderRadius: 10, border: 'none', textAlign: 'left',
-              background: !useCustom && quickPair === i ? 'var(--primary)' : 'var(--surface2)',
-              color: !useCustom && quickPair === i ? '#000' : 'var(--dim)',
-              fontWeight: !useCustom && quickPair === i ? 700 : 400,
-              fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-            }}>
+            <button key={i} onClick={() => handleQuickPair(i)} style={{ padding: '10px 14px', borderRadius: 10, border: 'none', textAlign: 'left', background: !useCustom && quickPair === i ? 'var(--primary)' : 'var(--surface2)', color: !useCustom && quickPair === i ? '#000' : 'var(--dim)', fontWeight: !useCustom && quickPair === i ? 700 : 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
               <span style={{ fontWeight: 700 }}>{getPeriodLabel(p.a)}</span>
               <span style={{ opacity: 0.5, margin: '0 6px' }}>vs</span>
               <span>{getPeriodLabel(p.b)}</span>
@@ -700,17 +648,10 @@ function CompareTab({ allOrders, expenses }) {
           ))}
         </div>
       </div>
-
-      {/* Custom range */}
       <div style={S.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={S.cardTitle}>📅 กำหนดช่วงเอง</div>
-          <button onClick={() => setUseCustom(true)} style={{
-            background: useCustom ? 'var(--primary)' : 'var(--surface2)',
-            color: useCustom ? '#000' : 'var(--dim)',
-            border: 'none', borderRadius: 8, padding: '5px 12px',
-            fontSize: 12, fontWeight: useCustom ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit',
-          }}>ใช้ช่วงนี้</button>
+          <button onClick={() => setUseCustom(true)} style={{ background: useCustom ? 'var(--primary)' : 'var(--surface2)', color: useCustom ? '#000' : 'var(--dim)', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: useCustom ? 700 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>ใช้ช่วงนี้</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
@@ -727,31 +668,17 @@ function CompareTab({ allOrders, expenses }) {
           </div>
         </div>
       </div>
-
-      {/* Metrics comparison */}
       <div style={S.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--primary)', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 700 }}>{labelA}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: '#888', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>{labelB}</span>
-            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--primary)', flexShrink: 0 }} /><span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 700 }}>{labelA}</span></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: '#888', flexShrink: 0 }} /><span style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>{labelB}</span></div>
           </div>
         </div>
-        <CompareMetric label="ยอดขายรวม" valA={statsA.total} valB={statsB.total}
-          format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
-        <CompareMetric label="จำนวนบิล" valA={statsA.count} valB={statsB.count}
-          format={v => `${fmt(v)} บิล`} labelA={labelA} labelB={labelB} />
-        <CompareMetric label="เฉลี่ย/บิล" valA={statsA.avg} valB={statsB.avg}
-          format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
+        <CompareMetric label="ยอดขายรวม" valA={statsA.total} valB={statsB.total} format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
+        <CompareMetric label="จำนวนบิล"  valA={statsA.count} valB={statsB.count} format={v => `${fmt(v)} บิล`} labelA={labelA} labelB={labelB} />
+        <CompareMetric label="เฉลี่ย/บิล" valA={statsA.avg}   valB={statsB.avg}   format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
       </div>
-
-
-      {/* Cost comparison (ถ้ามี expenses) */}
       {expenses && expenses.length > 0 && (() => {
         const getExpForOrders = (orders) => {
           if (!orders.length) return { total: 0 }
@@ -760,25 +687,19 @@ function CompareTab({ allOrders, expenses }) {
           const filtered = expenses.filter(e => e.date && e.date >= from && e.date <= to && e.category !== 'ส่วนลด')
           return { total: filtered.reduce((s, e) => s + (e.amount || 0), 0) }
         }
-        const costA = getExpForOrders(ordersA)
-        const costB = getExpForOrders(ordersB)
-        const profA = statsA.total - costA.total
-        const profB = statsB.total - costB.total
+        const costA = getExpForOrders(ordersA); const costB = getExpForOrders(ordersB)
+        const profA = statsA.total - costA.total; const profB = statsB.total - costB.total
         const marA  = statsA.total > 0 ? Math.round(profA / statsA.total * 100) : null
         const marB  = statsB.total > 0 ? Math.round(profB / statsB.total * 100) : null
         return (
           <div style={S.card}>
             <div style={S.cardTitle}>💸 ต้นทุน & กำไร เปรียบเทียบ</div>
-            <CompareMetric label="ต้นทุน"  valA={costA.total} valB={costB.total} format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
-            <CompareMetric label="กำไร"    valA={profA}       valB={profB}       format={v => `฿${fmt(Math.abs(v))}`} labelA={labelA} labelB={labelB} />
-            {marA !== null && marB !== null && (
-              <CompareMetric label="Margin" valA={marA} valB={marB} format={v => `${v}%`} labelA={labelA} labelB={labelB} />
-            )}
+            <CompareMetric label="ต้นทุน" valA={costA.total} valB={costB.total} format={v => `฿${fmt(v)}`} labelA={labelA} labelB={labelB} />
+            <CompareMetric label="กำไร"   valA={profA}       valB={profB}       format={v => `฿${fmt(Math.abs(v))}`} labelA={labelA} labelB={labelB} />
+            {marA !== null && marB !== null && <CompareMetric label="Margin" valA={marA} valB={marB} format={v => `${v}%`} labelA={labelA} labelB={labelB} />}
           </div>
         )
       })()}
-
-      {/* Top menu compare */}
       <div style={S.card}>
         <div style={S.cardTitle}>🏆 เมนูขายดี เปรียบเทียบ</div>
         <TopMenuCompare ordersA={ordersA} ordersB={ordersB} labelA={labelA} labelB={labelB} />
@@ -787,7 +708,6 @@ function CompareTab({ allOrders, expenses }) {
   )
 }
 
-
 // ─── MAIN EXPORT ───────────────────────────────────────────────────────────────
 const SUB_TABS = [
   { key: 'trend',   label: '📈 แนวโน้ม'     },
@@ -795,33 +715,20 @@ const SUB_TABS = [
   { key: 'compare', label: '⚖️ เปรียบเทียบ' },
 ]
 
-export default function TrendPeak({ allOrders, expenses = [] }) {
+export default function TrendPeak({ allOrders, expenses = [], closedDays = [] }) {
   const [sub, setSub] = useState('trend')
 
   return (
     <div style={{ padding: '0 0 20px' }}>
-      {/* Sub tab selector */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {SUB_TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setSub(t.key)}
-            style={{
-              flex: 1, padding: '10px', borderRadius: 12, border: 'none',
-              background: sub === t.key ? 'var(--primary)' : 'var(--surface2)',
-              color: sub === t.key ? '#000' : 'var(--dim)',
-              fontWeight: sub === t.key ? 700 : 400,
-              fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'all 0.15s',
-            }}
-          >
+          <button key={t.key} onClick={() => setSub(t.key)} style={{ flex: 1, padding: '10px', borderRadius: 12, border: 'none', background: sub === t.key ? 'var(--primary)' : 'var(--surface2)', color: sub === t.key ? '#000' : 'var(--dim)', fontWeight: sub === t.key ? 700 : 400, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
             {t.label}
           </button>
         ))}
       </div>
-
-      {sub === 'trend'   && <TrendTab   allOrders={allOrders} expenses={expenses} />}
-      {sub === 'peak'    && <PeakTab    allOrders={allOrders} />}
+      {sub === 'trend'   && <TrendTab   allOrders={allOrders} expenses={expenses} closedDays={closedDays} />}
+      {sub === 'peak'    && <PeakTab    allOrders={allOrders} closedDays={closedDays} />}
       {sub === 'compare' && <CompareTab allOrders={allOrders} expenses={expenses} />}
     </div>
   )
@@ -831,6 +738,7 @@ export default function TrendPeak({ allOrders, expenses = [] }) {
 const S = {
   card:      { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   cardTitle: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  miniCard:  { background: 'var(--surface)', borderRadius: 14, padding: '10px 12px', border: '1px solid var(--border)', textAlign: 'center' },
   row:       { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:     { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
 }
