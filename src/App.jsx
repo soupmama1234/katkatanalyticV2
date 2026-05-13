@@ -70,6 +70,7 @@ export default function App() {
   const { toast, showToast } = useToast()
   const [session, setSession]     = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [closedDays, setClosedDays] = useState([])
 
   useEffect(() => {
     // ตรวจ session ที่มีอยู่แล้ว
