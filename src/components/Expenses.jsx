@@ -16,7 +16,7 @@ import ClosedDays from './expenses/ClosedDays.jsx'
 const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Backup']
 
 
-export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes, closedDays, setClosedDays }) {
+export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes, ClosedDays, setClosedDays }) {
   const [tab, setTab] = useState('บันทึก')
   const { toast, dialog, notify, confirm, handleConfirm } = useNotify()
 
