@@ -70,6 +70,7 @@ export default function App() {
   const { toast, showToast } = useToast()
   const [session, setSession]     = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [closedDays, setClosedDays] = useState([])
 
   useEffect(() => {
     // ตรวจ session ที่มีอยู่แล้ว
@@ -120,9 +121,9 @@ export default function App() {
 
   const renderPage = () => {
     switch (activeTab) {
-      case 'overview':  return <Overview  allOrders={allOrders} />
+      case 'overview': return <Overview allOrders={allOrders} closedDays={closedDays} />
       case 'trendpeak': return <TrendPeak allOrders={allOrders} expenses={expenses} />
-      case 'expenses':  return <Expenses  expenses={expenses} setExpenses={setExpenses} allOrders={allOrders} actionNotes={actionNotes} setActionNotes={setActionNotes} />
+      case 'expenses':  return <Expenses  expenses={expenses} setExpenses={setExpenses} allOrders={allOrders} actionNotes={actionNotes} setActionNotes={setActionNotes} closedDays={closedDays} setClosedDays={setClosedDays} />
       case 'income':    return <Income    income={income} setIncome={setIncome} />
       case 'recipe':    return <Recipe    recipes={recipes} setRecipes={setRecipes} products={products} expenses={expenses} />
       case 'customer':  return <Customer  allOrders={allOrders} />

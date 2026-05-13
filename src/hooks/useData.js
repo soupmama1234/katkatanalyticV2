@@ -8,6 +8,7 @@ export function useData() {
   const [income, setIncome]         = useState([])
   const [recipes, setRecipes]       = useState([])
   const [actionNotes, setActionNotes] = useState([])
+  const [closedDays, setClosedDays] = useState([])  // ← เพิ่ม
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
 
@@ -31,13 +32,14 @@ export function useData() {
     setLoading(true)
     setError(null)
     try {
-      const [ordersData, pR, eR, iR, rR, aN] = await Promise.all([
+      const [ordersData, pR, eR, iR, rR, aN, cdR] = await Promise.all([
         fetchOrders(),
         supabase.from('products').select('id,name,category,price').order('name'),
         supabase.from('expenses').select('*').order('date', { ascending: false }),
         supabase.from('other_income').select('*').order('date', { ascending: false }),
         supabase.from('recipes').select('*').order('menu_name'),
         supabase.from('business_notes').select('*').order('note_date', { ascending: false }),
+        supabase.from('closed_days').select('*').order('date', { ascending: false }), // ← เพิ่ม
       ])
       setAllOrders(ordersData)
       setProducts(pR.data || [])
@@ -45,6 +47,7 @@ export function useData() {
       setIncome(iR.data || [])
       setRecipes(rR.data || [])
       setActionNotes(aN.data || [])
+      setClosedDays(cdR.data || [])  // ← เพิ่ม
     } catch (e) {
       setError(e.message)
     } finally {
@@ -61,6 +64,7 @@ export function useData() {
     income, setIncome,
     recipes, setRecipes,
     actionNotes, setActionNotes,
+    closedDays, setClosedDays,  // ← เพิ่ม
     loading, error,
     refetch: fetchAll,
   }

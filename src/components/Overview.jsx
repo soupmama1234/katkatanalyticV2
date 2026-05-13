@@ -6,10 +6,44 @@ import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
 import {
   filterByPeriod, filterByRange, computeStats,
-  getOrderItems, fmt, todayStr, CHART_TIP} from '../utils/helpers.js'
+  getOrderItems, fmt, todayStr, CHART_TIP
+} from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
-export default function Overview({ allOrders }) {
+// ── filter closedDays ให้อยู่ในช่วง period เดียวกับ orders ──────────────────
+function filterClosedDays(closedDays, period, from, to) {
+  if (!closedDays?.length) return []
+  if (period === 'custom') {
+    return closedDays.filter(d => d.date >= from && d.date <= to)
+  }
+  const now = new Date()
+  if (period === 'today') {
+    return closedDays.filter(d => d.date === todayStr)
+  }
+  if (period === 'yesterday') {
+    const y = new Date(now); y.setDate(y.getDate() - 1)
+    return closedDays.filter(d => d.date === y.toLocaleDateString('en-CA'))
+  }
+  if (period === '7d') {
+    const d = new Date(now); d.setDate(d.getDate() - 7)
+    const cutoff = d.toLocaleDateString('en-CA')
+    return closedDays.filter(d => d.date >= cutoff)
+  }
+  if (period === '30d') {
+    const d = new Date(now); d.setDate(d.getDate() - 30)
+    const cutoff = d.toLocaleDateString('en-CA')
+    return closedDays.filter(d => d.date >= cutoff)
+  }
+  if (period === '1y') {
+    const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
+    const cutoff = d.toLocaleDateString('en-CA')
+    return closedDays.filter(d => d.date >= cutoff)
+  }
+  // 'all'
+  return closedDays
+}
+
+export default function Overview({ allOrders, closedDays = [] }) {
   const [period, setPeriod] = useState('today')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
@@ -20,7 +54,16 @@ export default function Overview({ allOrders }) {
       : filterByPeriod(allOrders, period)
   }, [allOrders, period, from, to])
 
-  const s = useMemo(() => computeStats(orders), [orders])
+  // filter closedDays ให้ตรงกับ period
+  const filteredClosedDays = useMemo(
+    () => filterClosedDays(closedDays, period, from, to),
+    [closedDays, period, from, to]
+  )
+
+  const s = useMemo(
+    () => computeStats(orders, filteredClosedDays),
+    [orders, filteredClosedDays]
+  )
 
   const total = useMemo(() => orders.reduce((sum, r) => sum + (r.actual_amount || 0), 0), [orders])
   const avg   = orders.length ? Math.round(total / orders.length) : 0
@@ -31,7 +74,7 @@ export default function Overview({ allOrders }) {
   }, [allOrders])
 
   const dayCount = Object.keys(s.dailyMap).length || 1
-  const dailyAvg = Math.round(total / dayCount)
+  const dailyAvg = s.dailyAvg // ← ใช้จาก computeStats (หารด้วยวันเปิดร้านจริง)
 
   // item count
   let totalItems = 0
@@ -72,6 +115,9 @@ export default function Overview({ allOrders }) {
   })
   const topMods = Object.entries(modCount).sort((a, b) => b[1] - a[1]).slice(0, 8)
 
+  // ── closed days in period (สำหรับแสดงใน daily history) ──
+  const closedSet = new Set(filteredClosedDays.map(d => d.date))
+
   return (
     <div style={S.page}>
       <PeriodBar
@@ -81,15 +127,44 @@ export default function Overview({ allOrders }) {
         onFromChange={setFrom} onToChange={setTo}
       />
 
-      {/* Stats */}
+      {/* Stats หลัก */}
       <div style={S.grid4}>
         <StatCard icon="💰" label="ยอดรับจริง" value={`฿${fmt(total)}`} color="var(--primary)" />
         <StatCard icon="🧾" label="ออเดอร์" value={fmt(orders.length)} unit="บิล" />
         <StatCard icon="📊" label="เฉลี่ย/บิล" value={avg ? `฿${fmt(avg)}` : '—'} />
         <StatCard icon="📅" label="วันนี้" value={`฿${fmt(todayTotal)}`} color="var(--success)" />
         <StatCard icon="📦" label="รายการทั้งหมด" value={fmt(totalItems)} unit="ชิ้น" />
-        <StatCard icon="📈" label="เฉลี่ย/วัน" value={dailyAvg ? `฿${fmt(dailyAvg)}` : '—'} />
+        <StatCard icon="📈" label="เฉลี่ย/วันเปิด" value={dailyAvg ? `฿${fmt(dailyAvg)}` : '—'} color="var(--primary)" />
       </div>
+
+      {/* Operating days summary — แสดงเฉพาะตอนมีข้อมูล */}
+      {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+          gap: 8, marginBottom: 12,
+        }}>
+          <div style={S.miniCard}>
+            <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 4 }}>วันเปิดร้าน</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--success)', fontFamily: "'Inter',sans-serif" }}>
+              {s.operatingDaysCount}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--dim)' }}>วัน</div>
+          </div>
+          <div style={S.miniCard}>
+            <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 4 }}>วันหยุด</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: '#FF453A', fontFamily: "'Inter',sans-serif" }}>
+              {s.closedInPeriodCount}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--dim)' }}>วัน</div>
+          </div>
+          <div style={S.miniCard}>
+            <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 4 }}>เฉลี่ย/วันเปิด</div>
+            <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--primary)', fontFamily: "'Inter',sans-serif" }}>
+              {dailyAvg ? `฿${fmt(dailyAvg)}` : '—'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Platform */}
       <div style={S.section}>
@@ -192,17 +267,37 @@ export default function Overview({ allOrders }) {
         {Object.keys(menuT).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Daily history */}
+      {/* Daily history — แสดง 🔴 วันหยุดด้วย */}
       <div style={S.section}>
         <div style={S.secTitle}>📅 ประวัติรายวัน</div>
-        {dailyRows.map(([d, v]) => (
-          <div key={d} style={S.platformRow}>
-            <span style={{ flex: 1, fontSize: 13 }}>
-              {new Date(d).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
-            </span>
-            <span style={{ color: 'var(--success)', fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>฿{fmt(v)}</span>
-          </div>
-        ))}
+        {dailyRows.map(([d, v]) => {
+          const isClosed = closedSet.has(d)
+          const closedInfo = filteredClosedDays.find(c => c.date === d)
+          return (
+            <div key={d} style={S.platformRow}>
+              <span style={{ flex: 1, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {new Date(d).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
+                {isClosed && (
+                  <span style={{
+                    fontSize: 10, color: '#FF453A',
+                    background: 'rgba(255,69,58,0.1)',
+                    padding: '1px 6px', borderRadius: 6,
+                    border: '1px solid rgba(255,69,58,0.2)',
+                  }}>
+                    {closedInfo?.reason || 'หยุด'}
+                  </span>
+                )}
+              </span>
+              <span style={{
+                color: isClosed ? 'var(--dim)' : 'var(--success)',
+                fontWeight: 700,
+                fontFamily: "'Inter',sans-serif",
+              }}>
+                ฿{fmt(v)}
+              </span>
+            </div>
+          )
+        })}
         {dailyRows.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
     </div>
@@ -210,10 +305,15 @@ export default function Overview({ allOrders }) {
 }
 
 const S = {
-  page: { padding: '0 0 20px' },
-  grid4: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 },
-  section: { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
-  secTitle: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  page:        { padding: '0 0 20px' },
+  grid4:       { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 },
+  miniCard:    {
+    background: 'var(--surface)', borderRadius: 14,
+    padding: '12px 10px', border: '1px solid var(--border)',
+    textAlign: 'center',
+  },
+  section:     { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
+  secTitle:    { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
-  empty: { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
+  empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
 }

@@ -11,11 +11,12 @@ import { INPUT, MINI_CARD, Field, AutoComplete } from './expenses/shared.jsx'
 import ActionNotes from './expenses/ActionNotes.jsx'
 import Backup      from './expenses/Backup.jsx'
 import Forecast    from './expenses/Forecast.jsx'
+import ClosedDays from './expenses/ClosedDays.jsx'
 
-const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'Backup']
+const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Backup']
 
 
-export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes }) {
+export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes, closedDays, setClosedDays }) {
   const [tab, setTab] = useState('บันทึก')
   const { toast, dialog, notify, confirm, handleConfirm } = useNotify()
 
@@ -38,6 +39,7 @@ export default function Expenses({ expenses, setExpenses, allOrders, actionNotes
       {tab === 'รายการ'    && <ExpenseList    expenses={expenses} setExpenses={setExpenses} notify={notify} confirm={confirm} />}
       {tab === 'Forecast'  && <Forecast        expenses={expenses} />}
       {tab === 'Action'    && <ActionNotes     actionNotes={actionNotes} setActionNotes={setActionNotes} notify={notify} confirm={confirm} />}
+      {tab === 'วันหยุด' && <ClosedDays closedDays={closedDays} setClosedDays={setClosedDays} notify={notify} confirm={confirm} />}
       {tab === 'Backup'    && <Backup          allOrders={allOrders} notify={notify} />}
 
       <Toast toast={toast} />
