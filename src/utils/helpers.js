@@ -96,13 +96,18 @@ export function periodLabel(p) {
   }[p] || 'ทั้งหมด'
 }
 
-// คำนวณ stats จาก orders array
-export function computeStats(orders) {
+// ─── computeStats ────────────────────────────────────────────────────────────
+// closedDays: array of { date: 'YYYY-MM-DD', ... } จาก Supabase
+// ถ้าไม่ส่ง closedDays → ทำงานเหมือนเดิม 100% (backward compatible)
+export function computeStats(orders, closedDays = []) {
   const dailyMap = {}, menuCount = {}, menuRev = {}, catRev = {}, catCnt = {}
   const platformRev = {}, platformCnt = {}
   const byHour = Array.from({ length: 24 }, (_, i) => ({ hour: i, orders: 0, revenue: 0 }))
   const byWeekday = Array(7).fill(null).map(() => ({ rev: 0, cnt: 0 }))
   const posPayment = { cash: 0, transfer: 0, card: 0, qr: 0, other: 0 }
+
+  // ── closed days set สำหรับ O(1) lookup ──
+  const closedSet = new Set((closedDays || []).map(d => d.date))
 
   orders.forEach(r => {
     const actual = r.actual_amount || 0
@@ -141,7 +146,40 @@ export function computeStats(orders) {
     })
   })
 
-  return { dailyMap, menuCount, menuRev, catRev, catCnt, platformRev, platformCnt, byHour, byWeekday, posPayment }
+  // ── คำนวณ operating days ──────────────────────────────────────────────────
+  // วันที่มี order จริงๆ (ไม่นับวันหยุดที่บันทึกไว้)
+  const tradingDays = Object.keys(dailyMap)
+
+  // วันเปิดร้านจริง = มี order และไม่ได้บันทึกเป็นวันหยุด
+  const operatingDays = tradingDays.filter(d => !closedSet.has(d))
+
+  // วันหยุดที่อยู่ในช่วง period ที่ filter มา
+  const closedInPeriod = [...closedSet].filter(d => {
+    // ถ้าไม่มี order เลยในช่วงนี้ → ไม่นับ closed days ด้วย
+    if (tradingDays.length === 0) return false
+    const earliest = tradingDays.slice().sort()[0]
+    const latest   = tradingDays.slice().sort().reverse()[0]
+    return d >= earliest && d <= latest
+  })
+
+  const totalRevenue    = tradingDays.reduce((s, d) => s + dailyMap[d], 0)
+  const dailyAvg        = operatingDays.length
+    ? Math.round(totalRevenue / operatingDays.length) : 0
+
+  return {
+    dailyMap,
+    menuCount, menuRev,
+    catRev, catCnt,
+    platformRev, platformCnt,
+    byHour, byWeekday,
+    posPayment,
+    // ── ใหม่ ──
+    operatingDays,        // string[] ของวันที่เปิดร้านจริง
+    operatingDaysCount: operatingDays.length,
+    closedInPeriod,       // string[] ของวันหยุดในช่วงนี้
+    closedInPeriodCount: closedInPeriod.length,
+    dailyAvg,             // เฉลี่ย/วันเปิดร้าน (แม่นยำกว่าเดิม)
+  }
 }
 
 export function guessExpCategory(item) {
