@@ -10,7 +10,8 @@ export function useData() {
   const [actionNotes, setActionNotes] = useState([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
-
+  const [closedDays, setClosedDays] = useState([])
+  
   const fetchOrders = useCallback(async () => {
     const PAGE = 1000; let all = [], from = 0
     while (true) {
@@ -38,6 +39,7 @@ export function useData() {
         supabase.from('other_income').select('*').order('date', { ascending: false }),
         supabase.from('recipes').select('*').order('menu_name'),
         supabase.from('business_notes').select('*').order('note_date', { ascending: false }),
+        supabase.from('closed_days').select('*').order('date', { ascending: false }),
       ])
       setAllOrders(ordersData)
       setProducts(pR.data || [])
