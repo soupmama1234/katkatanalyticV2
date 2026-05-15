@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react'
 import { supabase } from '../supabase.js'
 import { fmt } from '../utils/helpers.js'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
-import { AutoComplete } from './expenses/shared.jsx'
 
 const INPUT = {
   background: 'var(--surface2)', border: '1px solid var(--border2)',
@@ -30,7 +29,7 @@ export default function Recipe({ recipes, setRecipes, products, expenses }) {
         ))}
       </div>
       {tab === 'สูตรอาหาร'        && <RecipeList recipes={recipes} setRecipes={setRecipes} products={products} expenses={expenses} notify={notify} confirm={confirm} />}
-      {tab === 'วิเคราะห์ Margin'  && <MarginAnalysis recipes={recipes} products={products} expenses={expenses} />}
+      {tab === 'วิเคราะห์ Margin' && <MarginAnalysis recipes={recipes} products={products} expenses={expenses} />}
       <Toast toast={toast} />
       <ConfirmDialog dialog={dialog} onConfirm={handleConfirm} />
     </div>
@@ -38,19 +37,34 @@ export default function Recipe({ recipes, setRecipes, products, expenses }) {
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-function getIngredientPPU(ingredient, expenses) {
-  const matches = expenses.filter(e =>
-    e.item && e.item.toLowerCase().includes((ingredient || '').toLowerCase()) && e.quantity && e.amount
-  )
-  if (!matches.length) return null
-  const e = matches[0]
-  return { ppu: e.amount / e.quantity, unit: e.unit || '', date: e.date }
+
+// สร้าง price map จาก expenses ครั้งเดียว แทนที่จะ loop ทุก keystroke
+function buildExpensePriceMap(expenses) {
+  const map = {}
+  expenses.forEach(e => {
+    if (!e.item || !e.quantity || !e.amount) return
+    const key = e.item.toLowerCase()
+    if (!map[key]) {
+      map[key] = { ppu: e.amount / e.quantity, unit: e.unit || '', date: e.date || '' }
+    }
+  })
+  return map
 }
 
-function calcRecipeCost(ings, expenses) {
+function lookupPPU(ingredient, priceMap) {
+  if (!ingredient) return null
+  const key = ingredient.toLowerCase()
+  // exact match
+  if (priceMap[key]) return priceMap[key]
+  // partial match
+  const found = Object.entries(priceMap).find(([k]) => k.includes(key) || key.includes(k))
+  return found ? found[1] : null
+}
+
+function calcRecipeCost(ings, priceMap) {
   let total = 0; let hasUnknown = false
   ings.forEach(ing => {
-    const info = getIngredientPPU(ing.ingredient, expenses)
+    const info = lookupPPU(ing.ingredient, priceMap)
     if (info) total += info.ppu * ing.quantity
     else if (ing.ingredient) hasUnknown = true
   })
@@ -64,11 +78,8 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   const [ingredients, setIngredients] = useState([{ ingredient: '', quantity: '', unit: '' }])
   const [saving, setSaving]           = useState(false)
 
-  // ✅ derive รายชื่อ ingredient จาก expenses เพื่อใช้ใน AutoComplete
-  const expenseItems = useMemo(() =>
-    [...new Set(expenses.map(e => e.item).filter(Boolean))],
-    [expenses]
-  )
+  // ✅ FIX: คำนวณ price map ครั้งเดียว ไม่ขึ้นกับ ingredients state
+  const expensePriceMap = useMemo(() => buildExpensePriceMap(expenses), [expenses])
 
   const byMenu = useMemo(() => {
     const map = {}
@@ -92,22 +103,6 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   const removeRow = (i) => setIngredients(prev => prev.filter((_, j) => j !== i))
   const updateRow = (i, key, val) => setIngredients(prev => prev.map((r, j) => j === i ? { ...r, [key]: val } : r))
 
-  // ✅ เมื่อ user เลือก ingredient จาก dropdown — auto-fill unit ถ้ามีในประวัติ
-  const handleIngredientSelect = (i, name) => {
-    const last = expenses
-      .filter(e => e.item === name && e.unit)
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
-
-    setIngredients(prev => prev.map((r, j) => {
-      if (j !== i) return r
-      return {
-        ...r,
-        ingredient: name,
-        unit: r.unit || last?.unit || '',
-      }
-    }))
-  }
-
   const handleSave = async () => {
     if (!editMenu) return notify('กรุณาเลือกเมนู', 'warning')
     const rows = ingredients.filter(r => r.ingredient.trim() && parseFloat(r.quantity) > 0)
@@ -128,22 +123,21 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
       if (error) throw error
       setRecipes(prev => [...prev.filter(r => r.menu_name !== editMenu), ...(data || [])])
       setShowModal(false)
-      notify(`บันทึกสูตร "${editMenu}" เรียบร้อย ✅`)
     } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
     setSaving(false)
   }
 
-  // preview cost in modal
+  // ✅ FIX: previewCost ใช้ expensePriceMap (computed once) แทน loop expenses ทุก keystroke
   const previewCost = useMemo(() => {
     let total = 0; let hasUnknown = false
     ingredients.forEach(row => {
       if (!row.ingredient || !parseFloat(row.quantity)) return
-      const info = getIngredientPPU(row.ingredient, expenses)
+      const info = lookupPPU(row.ingredient, expensePriceMap)
       if (info) total += info.ppu * parseFloat(row.quantity)
       else hasUnknown = true
     })
     return { total, hasUnknown }
-  }, [ingredients, expenses])
+  }, [ingredients, expensePriceMap])
 
   const selectedProduct = products.find(p => p.name === editMenu)
   const sellPrice       = selectedProduct?.price || 0
@@ -157,25 +151,28 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
         <div style={{ fontSize: 13, color: 'var(--dim)' }}>มีสูตรแล้ว {covered}/{products.length} เมนู</div>
         <button
           onClick={() => { setEditMenu(''); setIngredients([{ ingredient: '', quantity: '', unit: '' }]); setShowModal(true) }}
-          style={{ background: 'var(--primary)', color: '#000', border: 'none', borderRadius: 12, padding: '8px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ background: 'var(--primary)', color: '#000', border: 'none', borderRadius: 12, padding: '8px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+        >
           + เพิ่มสูตร
         </button>
       </div>
 
       {products.map(p => {
         const ings = byMenu[p.name] || []
-        const { total: cost, hasUnknown } = calcRecipeCost(ings, expenses)
-        const margin   = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
-        const mgColor  = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
+        const { total: cost, hasUnknown } = calcRecipeCost(ings, expensePriceMap)
+        const margin  = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
+        const mgColor = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
         return (
           <div key={p.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {p.price && <span style={{ fontSize: 11, color: 'var(--dim)' }}>฿{p.price}</span>}
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
                   background: ings.length > 0 ? 'rgba(50,215,75,0.15)' : 'var(--surface2)',
-                  color: ings.length > 0 ? 'var(--success)' : 'var(--dim)' }}>
+                  color: ings.length > 0 ? 'var(--success)' : 'var(--dim)',
+                }}>
                   {ings.length > 0 ? `${ings.length} วัตถุดิบ` : 'ยังไม่มีสูตร'}
                 </span>
               </div>
@@ -199,7 +196,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
         )
       })}
 
-      {/* ── Modal ── */}
+      {/* Modal */}
       {showModal && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
@@ -211,7 +208,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--dim)', fontSize: 22, cursor: 'pointer' }}>✕</button>
             </div>
 
-            {/* เลือกเมนู (กรณีเพิ่มใหม่) */}
+            {/* เลือกเมนู (ถ้าเพิ่มใหม่) */}
             {!editMenu && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>เลือกเมนู</div>
@@ -225,30 +222,23 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
             {/* Ingredient rows */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>🥩 วัตถุดิบ</div>
-              <button onClick={addRow} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '5px 12px', color: 'var(--primary)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                + เพิ่ม
-              </button>
+              <button onClick={addRow} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '5px 12px', color: 'var(--primary)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ เพิ่ม</button>
             </div>
 
             {ingredients.map((row, i) => {
-              const info    = row.ingredient ? getIngredientPPU(row.ingredient, expenses) : null
+              const info    = row.ingredient ? lookupPPU(row.ingredient, expensePriceMap) : null
               const qty     = parseFloat(row.quantity) || 0
               const rowCost = info && qty ? info.ppu * qty : null
-
               return (
                 <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
-                  {/* แถว 1: ชื่อวัตถุดิบ + จำนวน + ลบ */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: 6, marginBottom: 4 }}>
-
-                    {/* ✅ ใช้ AutoComplete แทน input ธรรมดา */}
-                    <AutoComplete
+                  {/* ชื่อ + จำนวน + ลบ */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: 6, marginBottom: 6 }}>
+                    <input
                       value={row.ingredient}
-                      onChange={v => updateRow(i, 'ingredient', v)}
-                      onSelect={name => handleIngredientSelect(i, name)}
-                      suggestions={expenseItems}
+                      onChange={e => updateRow(i, 'ingredient', e.target.value)}
                       placeholder="ชื่อวัตถุดิบ"
+                      style={{ ...INPUT, padding: '7px 10px' }}
                     />
-
                     <input
                       type="number"
                       value={row.quantity}
@@ -259,28 +249,20 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                     <button onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 18 }}>✕</button>
                   </div>
 
-                  {/* แถว 2: unit + hint ราคา */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                    <input
-                      value={row.unit}
-                      onChange={e => updateRow(i, 'unit', e.target.value)}
-                      placeholder="หน่วย (kg, ชิ้น...)"
-                      style={{ ...INPUT, padding: '6px 10px', fontSize: 12 }}
-                    />
-                    {/* hint ราคาจาก expenses */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center',
-                      fontSize: 11, padding: '6px 8px',
-                      borderRadius: 8,
-                      background: info ? 'rgba(50,215,75,0.08)' : 'transparent',
-                      border: info ? '1px solid rgba(50,215,75,0.2)' : '1px solid transparent',
-                      color: info ? 'var(--success)' : 'var(--dim)',
-                    }}>
-                      {info
-                        ? <>💡 ฿{info.ppu.toFixed(2)}/{info.unit || 'หน่วย'}{rowCost ? ` → ฿${rowCost.toFixed(2)}` : ''}</>
-                        : row.ingredient ? '⚠️ ไม่พบราคา' : 'กรอกชื่อวัตถุดิบ'
-                      }
-                    </div>
+                  {/* หน่วย (input เดียว ไม่มี preset) */}
+                  <input
+                    value={row.unit}
+                    onChange={e => updateRow(i, 'unit', e.target.value)}
+                    placeholder="หน่วย เช่น kg, ชิ้น, ลิตร"
+                    style={{ ...INPUT, padding: '6px 10px', fontSize: 12, marginBottom: 4 }}
+                  />
+
+                  {/* ราคาที่คำนวณได้ */}
+                  <div style={{ fontSize: 11, color: info ? 'var(--success)' : 'var(--dim)' }}>
+                    {info
+                      ? `฿${info.ppu.toFixed(2)}/${info.unit || 'หน่วย'}${rowCost ? ` → ฿${rowCost.toFixed(2)}` : ''}`
+                      : row.ingredient ? '⚠️ ไม่พบราคาใน expenses' : 'กรอกชื่อวัตถุดิบ'
+                    }
                   </div>
                 </div>
               )
@@ -293,14 +275,11 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                 ฿{previewCost.total.toFixed(2)}{previewCost.hasUnknown ? ' ⚠️' : ''}
               </div>
               {previewMargin !== null && (
-                <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4,
-                  color: previewMargin >= 60 ? 'var(--success)' : previewMargin >= 40 ? 'var(--primary)' : 'var(--danger)' }}>
+                <div style={{
+                  fontSize: 13, fontWeight: 700, marginTop: 4,
+                  color: previewMargin >= 60 ? 'var(--success)' : previewMargin >= 40 ? 'var(--primary)' : 'var(--danger)',
+                }}>
                   Margin {previewMargin}% · กำไร ฿{(sellPrice - previewCost.total).toFixed(2)}
-                </div>
-              )}
-              {previewCost.hasUnknown && (
-                <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4 }}>
-                  ⚠️ บางวัตถุดิบยังไม่พบราคาใน Expenses — กรอก Expenses ก่อนเพื่อคำนวณต้นทุนให้ถูกต้อง
                 </div>
               )}
             </div>
@@ -321,6 +300,9 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
 
 // ─── Margin Analysis ──────────────────────────────────────────────────────────
 function MarginAnalysis({ recipes, products, expenses }) {
+  // ✅ FIX: ใช้ price map เหมือนกัน
+  const expensePriceMap = useMemo(() => buildExpensePriceMap(expenses), [expenses])
+
   const byMenu = useMemo(() => {
     const map = {}
     recipes.forEach(r => { if (!map[r.menu_name]) map[r.menu_name] = []; map[r.menu_name].push(r) })
@@ -331,7 +313,7 @@ function MarginAnalysis({ recipes, products, expenses }) {
   const missing = products.length - covered
 
   const items = Object.entries(byMenu).map(([menu, ings]) => {
-    const { total: cost, hasUnknown } = calcRecipeCost(ings, expenses)
+    const { total: cost, hasUnknown } = calcRecipeCost(ings, expensePriceMap)
     const p         = products.find(x => x.name === menu)
     const sellPrice = p?.price || 0
     const margin    = sellPrice && cost > 0 ? (sellPrice - cost) / sellPrice * 100 : null
@@ -374,7 +356,4 @@ function MarginAnalysis({ recipes, products, expenses }) {
   )
 }
 
-const MINI = {
-  background: 'var(--surface)', borderRadius: 12,
-  padding: '12px 14px', border: '1px solid var(--border)', textAlign: 'center',
-}
+const MINI = { background: 'var(--surface)', borderRadius: 12, padding: '12px 14px', border: '1px solid var(--border)', textAlign: 'center' }
