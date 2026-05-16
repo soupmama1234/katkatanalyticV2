@@ -64,11 +64,26 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   const [ingredients, setIngredients] = useState([{ ingredient: '', quantity: '', unit: '' }])
   const [saving, setSaving]           = useState(false)
 
-  // ✅ derive รายชื่อ ingredient จาก expenses เพื่อใช้ใน AutoComplete
-  const expenseItems = useMemo(() =>
-    [...new Set(expenses.map(e => e.item).filter(Boolean))],
-    [expenses]
-  )
+  // ✅ derive รายชื่อ ingredient จาก expenses + recipes เพื่อใช้ใน AutoComplete
+  const ingredientSuggestions = useMemo(() => {
+    const seen = new Set()
+    const list = []
+    const add = (name) => {
+      const text = (name || '').trim()
+      const key = text.toLowerCase()
+      if (!text || seen.has(key)) return
+      seen.add(key)
+      list.push(text)
+    }
+
+    ;[...expenses]
+      .filter(e => e.item)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .forEach(e => add(e.item))
+
+    recipes.forEach(r => add(r.ingredient))
+    return list
+  }, [expenses, recipes])
 
   const byMenu = useMemo(() => {
     const map = {}
@@ -245,8 +260,9 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                       value={row.ingredient}
                       onChange={v => updateRow(i, 'ingredient', v)}
                       onSelect={name => handleIngredientSelect(i, name)}
-                      suggestions={expenseItems}
+                      suggestions={ingredientSuggestions}
                       placeholder="ชื่อวัตถุดิบ"
+                      showOnFocusSuggestions
                     />
 
                     <input

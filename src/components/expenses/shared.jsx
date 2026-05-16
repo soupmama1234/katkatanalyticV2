@@ -48,12 +48,13 @@ function fuzzyScore(name, kw) {
  *                  ถ้าไม่ส่ง onSelect จะ fallback ไปใช้ onChange แทน
  *   suggestions  : string[]
  *   placeholder  : string
+ *   showOnFocusSuggestions : boolean — แสดง suggestion ตอน focus แม้ยังไม่ได้พิมพ์
  */
-export function AutoComplete({ value, onChange, onSelect, suggestions, placeholder }) {
+export function AutoComplete({ value, onChange, onSelect, suggestions, placeholder, showOnFocusSuggestions = false }) {
   const [open, setOpen] = useState(false)
   const kw = (value || '').trim()
   const matches = kw.length === 0
-    ? []
+    ? showOnFocusSuggestions ? (suggestions || []).slice(0, 8) : []
     : (suggestions || [])
         .map(s => ({ s, score: fuzzyScore(s, kw) }))
         .filter(({ score }) => score >= 40)
