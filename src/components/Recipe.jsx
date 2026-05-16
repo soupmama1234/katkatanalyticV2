@@ -441,6 +441,20 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify }) {
                     </div>
                   </div>
                 </div>
+              )
+            })}
+
+            <div style={{ background: 'var(--surface2)', borderRadius: 12, padding: '12px 14px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 4 }}>ต้นทุนรวมต่อจาน</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 24, fontWeight: 800, color: 'var(--danger)' }}>
+                  ฿{previewCost.total.toFixed(2)}{previewCost.hasUnknown ? ' ⚠️' : ''}
+                </div>
+                {previewCost.hasUnknown && (
+                  <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4 }}>
+                    ⚠️ บางวัตถุดิบยังไม่พบราคาใน Expenses
+                  </div>
+                )}
               </div>
 
               {previewMargin !== null && (
