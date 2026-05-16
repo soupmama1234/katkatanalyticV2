@@ -134,7 +134,26 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify }) {
   const [ingredients, setIngredients] = useState([{ ingredient: '', quantity: '' }])
   const [saving, setSaving]           = useState(false)
 
-  const expensePriceMap = useMemo(() => buildExpensePriceMap(expenses), [expenses])
+  // ✅ derive รายชื่อ ingredient จาก expenses + recipes เพื่อใช้ใน AutoComplete
+  const ingredientSuggestions = useMemo(() => {
+    const seen = new Set()
+    const list = []
+    const add = (name) => {
+      const text = (name || '').trim()
+      const key = text.toLowerCase()
+      if (!text || seen.has(key)) return
+      seen.add(key)
+      list.push(text)
+    }
+
+    ;[...expenses]
+      .filter(e => e.item)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .forEach(e => add(e.item))
+
+    recipes.forEach(r => add(r.ingredient))
+    return list
+  }, [expenses, recipes])
 
   const byMenu = useMemo(() => {
     const map = {}
@@ -157,6 +176,61 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify }) {
   const addRow    = () => setIngredients(prev => [...prev, { ingredient: '', quantity: '' }])
   const removeRow = (i) => setIngredients(prev => prev.filter((_, j) => j !== i))
   const updateRow = (i, key, val) => setIngredients(prev => prev.map((r, j) => j === i ? { ...r, [key]: val } : r))
+  const getLatestExpenseUnit = (name) => expenses
+    .filter(e => e.item === name && e.unit)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.unit || ''
+  const getRecipeUnit = (name) => recipes.find(r => r.ingredient === name && r.unit)?.unit || ''
+  const getIngredientUnit = (name) => getLatestExpenseUnit(name) || getRecipeUnit(name)
+  const getQuantitySuggestions = (name, currentQuantity) => {
+    const seen = new Set()
+    return recipes
+      .filter(r => r.ingredient === name && parseFloat(r.quantity) > 0)
+      .map(r => ({
+        quantity: String(r.quantity),
+        unit: r.unit || getIngredientUnit(name),
+      }))
+      .filter(s => {
+        const key = `${s.quantity}|${s.unit || ''}`
+        if (s.quantity === String(currentQuantity || '') || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .slice(0, 3)
+  }
+
+  const applyQuantitySuggestion = (i, suggestion) => {
+    setIngredients(prev => prev.map((r, j) => {
+      if (j !== i) return r
+      return {
+        ...r,
+        quantity: suggestion.quantity,
+        unit: suggestion.unit || r.unit || getIngredientUnit(r.ingredient),
+      }
+    }))
+  }
+
+  const handleIngredientChange = (i, name) => {
+    setIngredients(prev => prev.map((r, j) => {
+      if (j !== i) return r
+      return {
+        ...r,
+        ingredient: name,
+        unit: getIngredientUnit(name),
+      }
+    }))
+  }
+
+  // ✅ เมื่อ user เลือก ingredient จาก dropdown — auto-fill unit ถ้ามีในประวัติ
+  const handleIngredientSelect = (i, name) => {
+    setIngredients(prev => prev.map((r, j) => {
+      if (j !== i) return r
+      return {
+        ...r,
+        ingredient: name,
+        unit: getIngredientUnit(name),
+      }
+    }))
+  }
 
   const handleSave = async () => {
     if (!editMenu) return notify('กรุณาเลือกเมนู', 'warning')
@@ -166,17 +240,14 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify }) {
     try {
       await supabase.from('recipes').delete().eq('menu_name', editMenu)
       const { data, error } = await supabase.from('recipes').insert(
-        rows.map(r => {
-          const info = lookupPPU(r.ingredient, expensePriceMap)
-          return {
-            menu_name: editMenu,
-            ingredient: r.ingredient.trim(),
-            quantity: parseFloat(r.quantity),
-            unit: info?.unit || null,
-            is_modifier: false,
-            extra_price: 0,
-          }
-        })
+        rows.map(r => ({
+          menu_name: editMenu,
+          ingredient: r.ingredient.trim(),
+          quantity: parseFloat(r.quantity),
+          unit: r.unit || getIngredientUnit(r.ingredient) || null,
+          is_modifier: false,
+          extra_price: 0,
+        }))
       ).select()
       if (error) throw error
       setRecipes(prev => [...prev.filter(r => r.menu_name !== editMenu), ...(data || [])])
@@ -292,39 +363,98 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify }) {
               ))}
             </div>
 
-            {/* Rows */}
-            {ingredients.map((row, i) => (
-              <IngredientRow
-                key={i}
-                row={row}
-                index={i}
-                onUpdate={updateRow}
-                onRemove={removeRow}
-                priceMap={expensePriceMap}
-              />
-            ))}
+            {ingredients.map((row, i) => {
+              const info    = row.ingredient ? getIngredientPPU(row.ingredient, expenses) : null
+              const qty     = parseFloat(row.quantity) || 0
+              const rowCost = info && qty ? info.ppu * qty : null
+              const displayUnit = row.unit || getIngredientUnit(row.ingredient)
+              const quantitySuggestions = row.ingredient ? getQuantitySuggestions(row.ingredient, row.quantity) : []
 
-            <button onClick={addRow} style={{
-              width: '100%', background: 'none', border: '1px dashed #2a2a2a',
-              borderRadius: 10, padding: '10px', color: '#555',
-              fontFamily: 'inherit', fontSize: 13, cursor: 'pointer', marginBottom: 16,
-            }}>
-              + เพิ่มวัตถุดิบ
-            </button>
+              return (
+                <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
+                  {/* แถว 1: ชื่อวัตถุดิบ + จำนวน + ลบ */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: 6, marginBottom: 4 }}>
 
-            {/* Cost summary */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              background: 'var(--surface2)', borderRadius: 14,
-              padding: '14px 16px', marginBottom: 16,
-              border: previewCost.total > 0 ? '1px solid rgba(255,69,58,0.15)' : '1px solid var(--border2)',
-            }}>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 4 }}>ต้นทุนรวม</div>
-                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 26, fontWeight: 800, color: 'var(--danger)', lineHeight: 1 }}>
-                  ฿{previewCost.total.toFixed(2)}
-                  {previewCost.hasUnknown && <span style={{ fontSize: 12, color: '#555', marginLeft: 6 }}>⚠️</span>}
+                    {/* ✅ ใช้ AutoComplete แทน input ธรรมดา */}
+                    <AutoComplete
+                      value={row.ingredient}
+                      onChange={v => handleIngredientChange(i, v)}
+                      onSelect={name => handleIngredientSelect(i, name)}
+                      suggestions={ingredientSuggestions}
+                      placeholder="ชื่อวัตถุดิบ"
+                      showOnFocusSuggestions
+                    />
+
+                    <input
+                      type="number"
+                      value={row.quantity}
+                      onChange={e => updateRow(i, 'quantity', e.target.value)}
+                      placeholder="0"
+                      style={{ ...INPUT, padding: '7px 8px', textAlign: 'center' }}
+                    />
+                    <button onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 18 }}>✕</button>
+                  </div>
+
+                  {quantitySuggestions.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                      {quantitySuggestions.map(s => (
+                        <button
+                          key={`${s.quantity}-${s.unit || ''}`}
+                          type="button"
+                          onClick={() => applyQuantitySuggestion(i, s)}
+                          style={{
+                            background: 'rgba(255,159,10,0.12)',
+                            border: '1px solid rgba(255,159,10,0.28)',
+                            borderRadius: 999,
+                            color: 'var(--primary)',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '4px 9px',
+                          }}
+                        >
+                          ใช้ {s.quantity}{s.unit ? ` ${s.unit}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* แถว 2: unit + hint ราคา */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    <div style={{ ...INPUT, padding: '6px 10px', fontSize: 12, color: displayUnit ? '#fff' : 'var(--dim)' }}>
+                      {displayUnit || 'หน่วย'}
+                    </div>
+                    {/* hint ราคาจาก expenses */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center',
+                      fontSize: 11, padding: '6px 8px',
+                      borderRadius: 8,
+                      background: info ? 'rgba(50,215,75,0.08)' : 'transparent',
+                      border: info ? '1px solid rgba(50,215,75,0.2)' : '1px solid transparent',
+                      color: info ? 'var(--success)' : 'var(--dim)',
+                    }}>
+                      {info
+                        ? <>💡 ฿{info.ppu.toFixed(2)}/{info.unit || 'หน่วย'}{rowCost ? ` → ฿${rowCost.toFixed(2)}` : ''}</>
+                        : row.ingredient ? '⚠️ ไม่พบราคา' : 'กรอกชื่อวัตถุดิบ'
+                      }
+                    </div>
+                  </div>
                 </div>
+              )
+            })}
+
+            <div style={{ background: 'var(--surface2)', borderRadius: 12, padding: '12px 14px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 4 }}>ต้นทุนรวมต่อจาน</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 24, fontWeight: 800, color: 'var(--danger)' }}>
+                  ฿{previewCost.total.toFixed(2)}{previewCost.hasUnknown ? ' ⚠️' : ''}
+                </div>
+                {previewCost.hasUnknown && (
+                  <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4 }}>
+                    ⚠️ บางวัตถุดิบยังไม่พบราคาใน Expenses
+                  </div>
+                )}
               </div>
 
               {previewMargin !== null && (
