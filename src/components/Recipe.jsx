@@ -111,6 +111,33 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.unit || ''
   const getRecipeUnit = (name) => recipes.find(r => r.ingredient === name && r.unit)?.unit || ''
   const getIngredientUnit = (name) => getLatestExpenseUnit(name) || getRecipeUnit(name)
+  const getQuantitySuggestions = (name, currentQuantity) => {
+    const seen = new Set()
+    return recipes
+      .filter(r => r.ingredient === name && parseFloat(r.quantity) > 0)
+      .map(r => ({
+        quantity: String(r.quantity),
+        unit: r.unit || getIngredientUnit(name),
+      }))
+      .filter(s => {
+        const key = `${s.quantity}|${s.unit || ''}`
+        if (s.quantity === String(currentQuantity || '') || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .slice(0, 3)
+  }
+
+  const applyQuantitySuggestion = (i, suggestion) => {
+    setIngredients(prev => prev.map((r, j) => {
+      if (j !== i) return r
+      return {
+        ...r,
+        quantity: suggestion.quantity,
+        unit: suggestion.unit || r.unit || getIngredientUnit(r.ingredient),
+      }
+    }))
+  }
 
   const handleIngredientChange = (i, name) => {
     setIngredients(prev => prev.map((r, j) => {
@@ -262,6 +289,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
               const qty     = parseFloat(row.quantity) || 0
               const rowCost = info && qty ? info.ppu * qty : null
               const displayUnit = row.unit || getIngredientUnit(row.ingredient)
+              const quantitySuggestions = row.ingredient ? getQuantitySuggestions(row.ingredient, row.quantity) : []
 
               return (
                 <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
@@ -287,6 +315,31 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                     />
                     <button onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 18 }}>✕</button>
                   </div>
+
+                  {quantitySuggestions.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                      {quantitySuggestions.map(s => (
+                        <button
+                          key={`${s.quantity}-${s.unit || ''}`}
+                          type="button"
+                          onClick={() => applyQuantitySuggestion(i, s)}
+                          style={{
+                            background: 'rgba(255,159,10,0.12)',
+                            border: '1px solid rgba(255,159,10,0.28)',
+                            borderRadius: 999,
+                            color: 'var(--primary)',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '4px 9px',
+                          }}
+                        >
+                          ใช้ {s.quantity}{s.unit ? ` ${s.unit}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* แถว 2: unit + hint ราคา */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
