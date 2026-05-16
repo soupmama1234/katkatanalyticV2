@@ -106,19 +106,31 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   const addRow    = () => setIngredients(prev => [...prev, { ingredient: '', quantity: '', unit: '' }])
   const removeRow = (i) => setIngredients(prev => prev.filter((_, j) => j !== i))
   const updateRow = (i, key, val) => setIngredients(prev => prev.map((r, j) => j === i ? { ...r, [key]: val } : r))
+  const getLatestExpenseUnit = (name) => expenses
+    .filter(e => e.item === name && e.unit)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.unit || ''
+  const getRecipeUnit = (name) => recipes.find(r => r.ingredient === name && r.unit)?.unit || ''
+  const getIngredientUnit = (name) => getLatestExpenseUnit(name) || getRecipeUnit(name)
 
-  // ✅ เมื่อ user เลือก ingredient จาก dropdown — auto-fill unit ถ้ามีในประวัติ
-  const handleIngredientSelect = (i, name) => {
-    const last = expenses
-      .filter(e => e.item === name && e.unit)
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]
-
+  const handleIngredientChange = (i, name) => {
     setIngredients(prev => prev.map((r, j) => {
       if (j !== i) return r
       return {
         ...r,
         ingredient: name,
-        unit: r.unit || last?.unit || '',
+        unit: getIngredientUnit(name),
+      }
+    }))
+  }
+
+  // ✅ เมื่อ user เลือก ingredient จาก dropdown — auto-fill unit ถ้ามีในประวัติ
+  const handleIngredientSelect = (i, name) => {
+    setIngredients(prev => prev.map((r, j) => {
+      if (j !== i) return r
+      return {
+        ...r,
+        ingredient: name,
+        unit: getIngredientUnit(name),
       }
     }))
   }
@@ -135,7 +147,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
           menu_name: editMenu,
           ingredient: r.ingredient.trim(),
           quantity: parseFloat(r.quantity),
-          unit: r.unit || null,
+          unit: r.unit || getIngredientUnit(r.ingredient) || null,
           is_modifier: false,
           extra_price: 0,
         }))
@@ -249,6 +261,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
               const info    = row.ingredient ? getIngredientPPU(row.ingredient, expenses) : null
               const qty     = parseFloat(row.quantity) || 0
               const rowCost = info && qty ? info.ppu * qty : null
+              const displayUnit = row.unit || getIngredientUnit(row.ingredient)
 
               return (
                 <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
@@ -258,7 +271,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                     {/* ✅ ใช้ AutoComplete แทน input ธรรมดา */}
                     <AutoComplete
                       value={row.ingredient}
-                      onChange={v => updateRow(i, 'ingredient', v)}
+                      onChange={v => handleIngredientChange(i, v)}
                       onSelect={name => handleIngredientSelect(i, name)}
                       suggestions={ingredientSuggestions}
                       placeholder="ชื่อวัตถุดิบ"
@@ -277,12 +290,9 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
 
                   {/* แถว 2: unit + hint ราคา */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                    <input
-                      value={row.unit}
-                      onChange={e => updateRow(i, 'unit', e.target.value)}
-                      placeholder="หน่วย (kg, ชิ้น...)"
-                      style={{ ...INPUT, padding: '6px 10px', fontSize: 12 }}
-                    />
+                    <div style={{ ...INPUT, padding: '6px 10px', fontSize: 12, color: displayUnit ? '#fff' : 'var(--dim)' }}>
+                      {displayUnit || 'หน่วย'}
+                    </div>
                     {/* hint ราคาจาก expenses */}
                     <div style={{
                       display: 'flex', alignItems: 'center',
