@@ -48,6 +48,62 @@ const TABLE_OPTIONS = [
   { key: 'staff',          label: '👤 พนักงาน',         default: false },
 ]
 
+// ─── Size helpers ─────────────────────────────────────────────────────────────
+/**
+ * derive ขนาดไฟล์จาก backupData ที่ fetch มาแล้ว
+ * ไม่ต้อง query Supabase เพิ่ม — ข้อมูลอยู่ใน memory อยู่แล้ว
+ *
+ * JSON ≈ raw JSON bytes
+ * CSV  ≈ JSON * 0.7   (ไม่มี key ซ้ำ จึงเล็กกว่า)
+ * TXT  ≈ JSON * 1.2   (มี label + formatting เพิ่ม)
+ * All  = JSON + CSV + TXT
+ */
+function estimateSizes(backupData) {
+  if (!backupData) return null
+  try {
+    const jsonBytes = new Blob([JSON.stringify(backupData)]).size
+    return {
+      json: jsonBytes,
+      csv:  Math.round(jsonBytes * 0.7),
+      txt:  Math.round(jsonBytes * 1.2),
+      all:  Math.round(jsonBytes + jsonBytes * 0.7 + jsonBytes * 1.2),
+    }
+  } catch {
+    return null
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B'
+  if (bytes < 1024)           return `${bytes} B`
+  if (bytes < 1024 * 1024)    return `~${(bytes / 1024).toFixed(0)} KB`
+  return `~${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function sizeColor(bytes) {
+  const mb = bytes / (1024 * 1024)
+  if (mb > 5)  return '#FF9F0A'   // ใหญ่ — เตือน
+  if (mb > 1)  return '#4D96FF'   // กลาง
+  return '#32D74B'                 // เล็ก — ok
+}
+
+// ─── SizeTag component ────────────────────────────────────────────────────────
+function SizeTag({ bytes }) {
+  if (!bytes) return null
+  const color = sizeColor(bytes)
+  return (
+    <span style={{
+      fontSize: 10, color,
+      background: color + '18',
+      border: `1px solid ${color}44`,
+      borderRadius: 6, padding: '2px 7px',
+      fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+    }}>
+      {formatBytes(bytes)}
+    </span>
+  )
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
   card: {
@@ -103,8 +159,8 @@ const S = {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Backup({ allOrders, notify }) {
   // Date range
-  const [fromDate, setFromDate]     = useState(FIRST_OF_MONTH)
-  const [toDate, setToDate]         = useState(TODAY)
+  const [fromDate, setFromDate]         = useState(FIRST_OF_MONTH)
+  const [toDate, setToDate]             = useState(TODAY)
   const [activePreset, setActivePreset] = useState(1) // เดือนนี้
 
   // Table selection
@@ -116,10 +172,10 @@ export default function Backup({ allOrders, notify }) {
   const [maskPhones, setMaskPhones] = useState(false)
 
   // Fetch state
-  const [fetching, setFetching]   = useState(false)
-  const [progress, setProgress]   = useState([])   // array of { label, count, error }
-  const [backupData, setBackupData] = useState(null)
-  const [fetchError, setFetchError] = useState(null)
+  const [fetching, setFetching]       = useState(false)
+  const [progress, setProgress]       = useState([])   // array of { label, count, error }
+  const [backupData, setBackupData]   = useState(null)
+  const [fetchError, setFetchError]   = useState(null)
 
   // ── Preset handler ──
   const applyPreset = (idx) => {
@@ -159,7 +215,6 @@ export default function Backup({ allOrders, notify }) {
           : [...selectedTables],
         onProgress: (p) => {
           setProgress(prev => {
-            // อัพเดต row ล่าสุด หรือเพิ่มใหม่
             const last = prev[prev.length - 1]
             if (last && last.step === p.step && last.count === null) {
               return [...prev.slice(0, -1), p]
@@ -203,14 +258,18 @@ export default function Backup({ allOrders, notify }) {
     notify('📥 ดาวน์โหลดทุกรูปแบบเรียบร้อย')
   }
 
-  const hasData    = !!backupData
-  const totalRows  = hasData
+  // ── Derived values ──
+  const hasData     = !!backupData
+  const totalRows   = hasData
     ? Object.values(backupData.meta.summary).reduce((s, n) => s + n, 0)
     : 0
-  const hasErrors  = hasData && backupData.meta.errors
+  const hasErrors   = hasData && backupData.meta.errors
   const progressPct = progress.length > 0
     ? Math.round((progress.filter(p => p.count !== null).length / (selectedTables.size || 1)) * 100)
     : 0
+
+  // derive ขนาดไฟล์จาก backupData — ไม่ต้อง useEffect เพราะ compute จาก state โดยตรง
+  const fileSizes = estimateSizes(backupData)
 
   return (
     <div style={{ paddingBottom: 20 }}>
@@ -219,7 +278,6 @@ export default function Backup({ allOrders, notify }) {
       <div style={S.card}>
         <div style={S.sectionTitle}>📅 ช่วงเวลา</div>
 
-        {/* Presets */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           {PRESETS.map((p, i) => (
             <button key={i} onClick={() => applyPreset(i)} style={S.presetBtn(activePreset === i)}>
@@ -228,7 +286,6 @@ export default function Backup({ allOrders, notify }) {
           ))}
         </div>
 
-        {/* Custom date inputs */}
         {activePreset !== 3 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div>
@@ -336,7 +393,6 @@ export default function Backup({ allOrders, notify }) {
             )}
           </div>
 
-          {/* Progress bar */}
           {fetching && (
             <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2, overflow: 'hidden', marginBottom: 12 }}>
               <div style={{
@@ -362,7 +418,7 @@ export default function Backup({ allOrders, notify }) {
             </div>
           ))}
 
-          {/* Summary */}
+          {/* Summary + size indicator */}
           {hasData && (
             <div style={{
               marginTop: 12, padding: '10px 14px',
@@ -376,8 +432,38 @@ export default function Backup({ allOrders, notify }) {
               <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 4 }}>
                 รวม {totalRows.toLocaleString()} rows จาก {Object.keys(backupData.meta.summary).length} tables
               </div>
+
+              {/* ── SIZE INDICATOR ── แสดงหลัง fetch สำเร็จ */}
+              {fileSizes && (
+                <div style={{
+                  marginTop: 10, paddingTop: 10,
+                  borderTop: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 6 }}>
+                    ขนาดไฟล์ที่จะ download (ประมาณการ)
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[
+                      { label: '📄 JSON',     bytes: fileSizes.json },
+                      { label: '📊 CSV',      bytes: fileSizes.csv  },
+                      { label: '📝 TXT',      bytes: fileSizes.txt  },
+                      { label: '📦 ทั้งหมด',  bytes: fileSizes.all  },
+                    ].map(({ label, bytes }) => (
+                      <div key={label} style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        background: 'var(--surface2)', borderRadius: 8,
+                        padding: '5px 10px',
+                      }}>
+                        <span style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</span>
+                        <SizeTag bytes={bytes} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {hasErrors && (
-                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 8 }}>
                   Error: {Object.entries(backupData.meta.errors).map(([k, v]) => `${k}: ${v}`).join(', ')}
                 </div>
               )}
@@ -391,23 +477,22 @@ export default function Backup({ allOrders, notify }) {
         <div style={S.card}>
           <div style={S.sectionTitle}>📥 ดาวน์โหลด</div>
 
-          {/* Main export buttons */}
+          {/* Main export buttons พร้อม size tag ใต้แต่ละปุ่ม */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-            <button onClick={handleExportJSON} style={S.exportBtn('#4D96FF', false)}>
-              <div style={{ fontSize: 18, marginBottom: 4 }}>📄</div>
-              <div>JSON</div>
-              <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>restore ได้</div>
-            </button>
-            <button onClick={handleExportCSV} style={S.exportBtn('#32D74B', false)}>
-              <div style={{ fontSize: 18, marginBottom: 4 }}>📊</div>
-              <div>CSV</div>
-              <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>Excel / Sheets</div>
-            </button>
-            <button onClick={handleExportTXT} style={S.exportBtn('#FF9F0A', false)}>
-              <div style={{ fontSize: 18, marginBottom: 4 }}>📝</div>
-              <div>TXT</div>
-              <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>NotebookLM</div>
-            </button>
+            {[
+              { label: 'JSON', icon: '📄', sub: 'restore ได้',   color: '#4D96FF', handler: handleExportJSON, sizeKey: 'json' },
+              { label: 'CSV',  icon: '📊', sub: 'Excel / Sheets', color: '#32D74B', handler: handleExportCSV,  sizeKey: 'csv'  },
+              { label: 'TXT',  icon: '📝', sub: 'NotebookLM',    color: '#FF9F0A', handler: handleExportTXT,  sizeKey: 'txt'  },
+            ].map(({ label, icon, sub, color, handler, sizeKey }) => (
+              <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+                <button onClick={handler} style={{ ...S.exportBtn(color, false), width: '100%' }}>
+                  <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+                  <div>{label}</div>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{sub}</div>
+                </button>
+                {fileSizes && <SizeTag bytes={fileSizes[sizeKey]} />}
+              </div>
+            ))}
           </div>
 
           {/* Export All */}
@@ -418,9 +503,11 @@ export default function Backup({ allOrders, notify }) {
               background: 'linear-gradient(135deg, #4D96FF, #32D74B)',
               color: '#000', fontWeight: 800, fontSize: 14,
               cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
-            📦 ดาวน์โหลดทุกรูปแบบ (JSON + CSV + TXT)
+            <span>📦 ดาวน์โหลดทุกรูปแบบ (JSON + CSV + TXT)</span>
+            {fileSizes && <SizeTag bytes={fileSizes.all} />}
           </button>
 
           {/* File info */}
