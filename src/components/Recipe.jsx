@@ -77,7 +77,7 @@ function calcRecipeCostFast(ings, ppuMap) {
 
 // ─── IngredientInput: input + autocomplete + debounce ────────────────────────
 // memo ป้องกัน re-render row อื่นเมื่อ row นึงพิมพ์
-const IngredientInput = memo(function IngredientInput({ value, onChange, suggestions }) {
+const IngredientInput = memo(function IngredientInput({ value, onChange, onSelect, suggestions }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value) // local state สำหรับ display
   const debounceRef = useRef(null)
@@ -108,9 +108,10 @@ const IngredientInput = memo(function IngredientInput({ value, onChange, suggest
 
   const handleSelect = useCallback((m) => {
     setQuery(m)
-    onChange(m)
     setOpen(false)
-  }, [onChange])
+    if (onSelect) onSelect(m)
+    else onChange(m)
+  }, [onChange, onSelect])
 
   return (
     <div style={{ position: 'relative', flex: 1 }}>
@@ -168,6 +169,18 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
     [...new Set(expenses.map(e => e.item).filter(Boolean))],
     [expenses]
   )
+
+  // map ingredient → { quantity, unit } จากทุก recipes ที่บันทึกไว้
+  const recipeQtyMap = useMemo(() => {
+    const map = {}
+    recipes.forEach(r => {
+      if (r.ingredient && r.quantity) {
+        const key = r.ingredient.toLowerCase()
+        if (!map[key]) map[key] = { quantity: r.quantity, unit: r.unit || '' }
+      }
+    })
+    return map
+  }, [recipes])
 
   const byMenu = useMemo(() => {
     const map = {}
@@ -309,6 +322,14 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                     <IngredientInput
                       value={row.ingredient}
                       onChange={val => updateRow(i, 'ingredient', val)}
+                      onSelect={val => {
+                        updateRow(i, 'ingredient', val)
+                        const info = recipeQtyMap[val.toLowerCase()]
+                        if (info && !parseFloat(row.quantity)) {
+                          updateRow(i, 'quantity', String(info.quantity))
+                          updateRow(i, 'unit', info.unit)
+                        }
+                      }}
                       suggestions={ingredientSuggestions}
                     />
                     <input type="number" value={row.quantity} onChange={e => updateRow(i, 'quantity', e.target.value)}

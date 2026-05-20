@@ -101,6 +101,33 @@ export default function Overview({ allOrders, closedDays = [] }) {
     .filter(k => s.platformRev[k] > 0)
     .map(k => ({ key: k, rev: s.platformRev[k], cnt: s.platformCnt[k] }))
 
+  // POS payment split (same logic as Dashboard)
+  const posPaymentSummary = useMemo(() => {
+    let cash = 0
+    let transfer = 0
+
+    orders.forEach(o => {
+      const channel = (o.channel || '').toLowerCase()
+
+      // เอาเฉพาะ POS
+      if (channel !== 'pos') return
+
+      const amount = Number(
+        o.actualAmount ||
+        o.actual_amount ||
+        0
+      )
+
+      if (o.payment === 'cash') {
+        cash += amount
+      } else {
+        transfer += amount
+      }
+    })
+
+    return { cash, transfer }
+  }, [orders])
+
   // daily history
   const dailyRows = Object.entries(s.dailyMap)
     .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14)
@@ -182,6 +209,22 @@ export default function Overview({ allOrders, closedDays = [] }) {
                 <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>
+
+                {p.key === 'pos' && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 10,
+                      color: 'var(--dim)',
+                      display: 'flex',
+                      gap: 10,
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <span>💵 ฿{fmt(posPaymentSummary.cash)}</span>
+                    <span>📲 ฿{fmt(posPaymentSummary.transfer)}</span>
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: 'right', minWidth: 90 }}>
                 <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color }}>฿{fmt(p.rev)}</div>
