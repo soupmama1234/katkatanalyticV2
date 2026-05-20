@@ -360,4 +360,5 @@ const S = {
   posBreakdown: { padding: '2px 0 10px 16px', display: 'flex', flexDirection: 'column', gap: 4 },
   posSubRow:    { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--dim)' },
   posSubValue:  { fontWeight: 600, fontFamily: "'Inter',sans-serif" }
-}
+    }
+    
