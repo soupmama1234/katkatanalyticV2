@@ -21,25 +21,28 @@ function filterClosedDays(closedDays, period, from, to) {
     return closedDays.filter(d => d.date === todayStr)
   }
   if (period === 'yesterday') {
-    const y = new Date(now); y.setDate(y.getDate() - 1)
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1)
     return closedDays.filter(d => d.date === y.toLocaleDateString('en-CA'))
   }
   if (period === '7d') {
-    const d = new Date(now); d.setDate(d.getDate() - 7)
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7)
     const cutoff = d.toLocaleDateString('en-CA')
     return closedDays.filter(d => d.date >= cutoff)
   }
   if (period === '30d') {
-    const d = new Date(now); d.setDate(d.getDate() - 30)
+    const d = new Date(now);
+    d.setDate(d.getDate() - 30)
     const cutoff = d.toLocaleDateString('en-CA')
     return closedDays.filter(d => d.date >= cutoff)
   }
   if (period === '1y') {
-    const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
+    const d = new Date(now);
+    d.setFullYear(d.getFullYear() - 1)
     const cutoff = d.toLocaleDateString('en-CA')
     return closedDays.filter(d => d.date >= cutoff)
   }
-  // 'all'
   return closedDays
 }
 
@@ -54,7 +57,6 @@ export default function Overview({ allOrders, closedDays = [] }) {
       : filterByPeriod(allOrders, period)
   }, [allOrders, period, from, to])
 
-  // filter closedDays ให้ตรงกับ period
   const filteredClosedDays = useMemo(
     () => filterClosedDays(closedDays, period, from, to),
     [closedDays, period, from, to]
@@ -74,7 +76,25 @@ export default function Overview({ allOrders, closedDays = [] }) {
   }, [allOrders])
 
   const dayCount = Object.keys(s.dailyMap).length || 1
-  const dailyAvg = s.dailyAvg // ← ใช้จาก computeStats (หารด้วยวันเปิดร้านจริง)
+  const dailyAvg = s.dailyAvg 
+
+  // ── คำนวณแยกยอด เงินสด / เงินโอน สำหรับ POS ──────────────────
+  const posDetails = useMemo(() => {
+    const posOrders = orders.filter(r => r.platform?.toLowerCase() === 'pos' || !r.platform)
+    
+    let cashRev = 0
+    let transferRev = 0
+
+    posOrders.forEach(r => {
+      if (r.payment_method?.toLowerCase() === 'cash') {
+        cashRev += (r.actual_amount || 0)
+      } else {
+        transferRev += (r.actual_amount || 0)
+      }
+    })
+
+    return { cashRev, transferRev }
+  }, [orders])
 
   // item count
   let totalItems = 0
@@ -115,7 +135,6 @@ export default function Overview({ allOrders, closedDays = [] }) {
   })
   const topMods = Object.entries(modCount).sort((a, b) => b[1] - a[1]).slice(0, 8)
 
-  // ── closed days in period (สำหรับแสดงใน daily history) ──
   const closedSet = new Set(filteredClosedDays.map(d => d.date))
 
   return (
@@ -137,7 +156,7 @@ export default function Overview({ allOrders, closedDays = [] }) {
         <StatCard icon="📈" label="เฉลี่ย/วันเปิด" value={dailyAvg ? `฿${fmt(dailyAvg)}` : '—'} color="var(--primary)" />
       </div>
 
-      {/* Operating days summary — แสดงเฉพาะตอนมีข้อมูล */}
+      {/* Operating days summary */}
       {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
         <div style={{
           display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
@@ -173,20 +192,39 @@ export default function Overview({ allOrders, closedDays = [] }) {
           const color = CH_COLOR[p.key] || '#888'
           const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
           const avgBill = p.cnt > 0 ? Math.round(p.rev / p.cnt) : 0
+          const isPOS = p.key.toLowerCase() === 'pos'
+
           return (
-            <div key={p.key} style={S.platformRow}>
-              <div style={{ width: 64, color, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-                {p.key.toUpperCase()}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+            <div key={p.key} style={{ borderBottom: '1px solid var(--border2)' }}>
+              {/* แถวหลักของ Platform */}
+              <div style={S.platformRow}>
+                <div style={{ width: 64, color, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                  {p.key.toUpperCase()}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', minWidth: 90 }}>
+                  <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color }}>฿{fmt(p.rev)}</div>
+                  <div style={{ fontSize: 10, color: 'var(--dim)' }}>{p.cnt} บิล · ฿{fmt(avgBill)}/บิล</div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right', minWidth: 90 }}>
-                <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color }}>฿{fmt(p.rev)}</div>
-                <div style={{ fontSize: 10, color: 'var(--dim)' }}>{p.cnt} บิล · ฿{fmt(avgBill)}/บิล</div>
-              </div>
+
+              {/* ส่วนที่เพิ่ม: แสดงยอดเงินสด/เงินโอน เฉพาะ POS ย่อยลงมา */}
+              {isPOS && (
+                <div style={S.posBreakdown}>
+                  <div style={S.posSubRow}>
+                    <span>💵 เงินสด:</span>
+                    <span style={S.posSubValue}>฿{fmt(posDetails.cashRev)}</span>
+                  </div>
+                  <div style={S.posSubRow}>
+                    <span>📱 เงินโอน:</span>
+                    <span style={S.posSubValue}>฿{fmt(posDetails.transferRev)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
@@ -267,7 +305,7 @@ export default function Overview({ allOrders, closedDays = [] }) {
         {Object.keys(menuT).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Daily history — แสดง 🔴 วันหยุดด้วย */}
+      {/* Daily history */}
       <div style={S.section}>
         <div style={S.secTitle}>📅 ประวัติรายวัน</div>
         {dailyRows.map(([d, v]) => {
@@ -314,6 +352,11 @@ const S = {
   },
   section:     { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   secTitle:    { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
+  platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
-}
+  
+  posBreakdown: { padding: '2px 0 10px 16px', display: 'flex', flexDirection: 'column', gap: 4 },
+  posSubRow:    { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--dim)' },
+  posSubValue:  { fontWeight: 600, fontFamily: "'Inter',sans-serif" }
+            }
+        
