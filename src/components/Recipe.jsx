@@ -56,6 +56,59 @@ function calcRecipeCost(ings, expenses) {
   return { total, hasUnknown }
 }
 
+// ─── IngredientInput: input + autocomplete dropdown ──────────────────────────
+function IngredientInput({ value, onChange, suggestions }) {
+  const [open, setOpen] = useState(false)
+
+  const matches = useMemo(() => {
+    const kw = (value || '').trim().toLowerCase()
+    if (!kw) return []
+    return suggestions
+      .filter(s => s.toLowerCase().includes(kw))
+      .slice(0, 6)
+  }, [value, suggestions])
+
+  return (
+    <div style={{ position: 'relative', flex: 1 }}>
+      <input
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="ชื่อวัตถุดิบ"
+        style={{ ...INPUT, padding: '7px 10px' }}
+      />
+      {open && matches.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+          background: '#1e1e1e', border: '1px solid #4D96FF44',
+          borderRadius: 10, marginTop: 4,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          overflow: 'hidden',
+        }}>
+          <div style={{ padding: '5px 10px', fontSize: 9, color: '#4D96FF', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border2)' }}>
+            📌 จาก expenses
+          </div>
+          {matches.map(m => (
+            <div
+              key={m}
+              onMouseDown={() => { onChange(m); setOpen(false) }}
+              style={{
+                padding: '9px 12px', fontSize: 13, cursor: 'pointer',
+                color: '#fff', borderBottom: '1px solid #2a2a2a',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#2a2a2a'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {m}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Recipe List ──────────────────────────────────────────────────────────────
 function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }) {
   const [showModal, setShowModal]   = useState(false)
@@ -63,13 +116,18 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   const [ingredients, setIngredients] = useState([{ ingredient: '', quantity: '', unit: '' }])
   const [saving, setSaving]         = useState(false)
 
+  // รายชื่อวัตถุดิบทั้งหมดจาก expenses (unique)
+  const ingredientSuggestions = useMemo(() =>
+    [...new Set(expenses.map(e => e.item).filter(Boolean))],
+    [expenses]
+  )
+
   const byMenu = useMemo(() => {
     const map = {}
     recipes.forEach(r => { if (!map[r.menu_name]) map[r.menu_name] = []; map[r.menu_name].push(r) })
     return map
   }, [recipes])
 
-  // ── FIX: นับเฉพาะ menu_name ที่ยังมีใน products จริงๆ ──
   const covered = useMemo(() =>
     Object.keys(byMenu).filter(name => products.some(p => p.name === name)).length,
     [byMenu, products]
@@ -106,7 +164,6 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
     setSaving(false)
   }
 
-  // preview cost in modal
   const previewCost = useMemo(() => {
     let total = 0; let hasUnknown = false
     ingredients.forEach(row => {
@@ -197,8 +254,12 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
               return (
                 <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: 6, marginBottom: 4 }}>
-                    <input value={row.ingredient} onChange={e => updateRow(i, 'ingredient', e.target.value)}
-                      placeholder="ชื่อวัตถุดิบ" style={{ ...INPUT, padding: '7px 10px' }} />
+                    {/* ── IngredientInput แทน plain input ── */}
+                    <IngredientInput
+                      value={row.ingredient}
+                      onChange={val => updateRow(i, 'ingredient', val)}
+                      suggestions={ingredientSuggestions}
+                    />
                     <input type="number" value={row.quantity} onChange={e => updateRow(i, 'quantity', e.target.value)}
                       placeholder="0" style={{ ...INPUT, padding: '7px 8px', textAlign: 'center' }} />
                     <button onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -247,14 +308,12 @@ function MarginAnalysis({ recipes, products, expenses }) {
     return map
   }, [recipes])
 
-  // ── FIX: นับเฉพาะ menu_name ที่ยังมีใน products จริงๆ ──
   const covered = useMemo(() =>
     Object.keys(byMenu).filter(name => products.some(p => p.name === name)).length,
     [byMenu, products]
   )
   const missing = products.length - covered
 
-  // ── FIX: แสดงเฉพาะ recipe ที่ยังมีเมนูใน products ──
   const items = Object.entries(byMenu)
     .filter(([menu]) => products.some(p => p.name === menu))
     .map(([menu, ings]) => {
