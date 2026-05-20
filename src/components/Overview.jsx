@@ -78,21 +78,26 @@ export default function Overview({ allOrders, closedDays = [] }) {
   const dayCount = Object.keys(s.dailyMap).length || 1
   const dailyAvg = s.dailyAvg 
 
-  // ── FIX LOGIC: คำนวณแยกยอด เงินสด / เงินโอน สำหรับ POS เท่านั้น ──────────────────
+  // ── 🛠️ แก้ไข LOGIC ตรงนี้: แยกเงินสด และ เงินโอน ที่มาจากช่องทาง POS เท่านั้น ──────────────────
   const posDetails = useMemo(() => {
-    // กรองเอาเฉพาะออเดอร์ที่เป็นของ POS จริงๆ (platform เป็น pos หรือไม่ระบุ)
+    // 1. กรองเฉพาะบิลที่เป็นของช่องทาง POS เท่านั้น
     const posOrders = orders.filter(r => r.platform?.toLowerCase() === 'pos' || !r.platform)
     
     let cashRev = 0
     let transferRev = 0
 
     posOrders.forEach(r => {
-      // คัดแยกประเภทเงินสด ส่วนที่เหลือในหน้าร้าน POS ให้ถือว่าเป็นเงินโอนของ POS
-      if (r.payment_method?.toLowerCase() === 'cash' || r.payment_method === 'เงินสด') {
+      const method = r.payment_method?.toLowerCase() || ''
+      
+      // 2. ตรวจสอบว่าเช็คเงินสดจริง ถึงแยกไปบวกฝั่งเงินสด
+      if (method === 'cash' || method === 'เงินสด') {
         cashRev += (r.actual_amount || 0)
-      } else {
+      } 
+      // 3. ตรวจสอบว่าเป็นรูปแบบของเงินโอนจริง (ป้องกันการดึงยอดของแพลตฟอร์มอื่นมาปน)
+      else if (method === 'transfer' || method === 'โอน' || method === 'promptpay' || method === 'scan' || method === 'เงินโอน') {
         transferRev += (r.actual_amount || 0)
       }
+      // หมายเหตุ: หากโครงสร้างข้อมูลของคุณใช้คำอื่น สามารถเพิ่มเงื่อนไขในช่อง else if ด้านบนได้เลยครับ
     })
 
     return { cashRev, transferRev }
@@ -214,7 +219,7 @@ export default function Overview({ allOrders, closedDays = [] }) {
                 </div>
               </div>
 
-              {/* แสดงยอดเงินสด/เงินโอน ย่อยลงมาเฉพาะ Platform POS */}
+              {/* แสดงยอดแยกย่อย เงินสด และ เงินโอน เฉพาะช่องทาง POS เท่านั้น */}
               {isPOS && (
                 <div style={S.posBreakdown}>
                   <div style={S.posSubRow}>
@@ -354,11 +359,11 @@ const S = {
   },
   section:     { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   secTitle:    { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }, // ดึง borderBottom ออกไปใส่ระดับ div คลุมด้านบนเพื่อให้กรุ๊ปข้อมูลสวยงาม
+  platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
   
   posBreakdown: { padding: '2px 0 10px 16px', display: 'flex', flexDirection: 'column', gap: 4 },
   posSubRow:    { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--dim)' },
   posSubValue:  { fontWeight: 600, fontFamily: "'Inter',sans-serif" }
-    }
-    
+                       }
+      
