@@ -98,15 +98,13 @@ export function periodLabel(p) {
 
 // ─── computeStats ────────────────────────────────────────────────────────────
 // closedDays: array of { date: 'YYYY-MM-DD', ... } จาก Supabase
-// ถ้าไม่ส่ง closedDays → ทำงานเหมือนเดิม 100% (backward compatible)
 export function computeStats(orders, closedDays = []) {
   const dailyMap = {}, menuCount = {}, menuRev = {}, catRev = {}, catCnt = {}
-  const platformRev = {}, platformCnt = {}
+  const platformRev = {}, platformCnt = {}, platformTransfer = {}, platformSubsidy = {}
   const byHour = Array.from({ length: 24 }, (_, i) => ({ hour: i, orders: 0, revenue: 0 }))
   const byWeekday = Array(7).fill(null).map(() => ({ rev: 0, cnt: 0 }))
   const posPayment = { cash: 0, transfer: 0, card: 0, qr: 0, other: 0 }
 
-  // ── closed days set สำหรับ O(1) lookup ──
   const closedSet = new Set((closedDays || []).map(d => d.date))
 
   orders.forEach(r => {
@@ -117,6 +115,11 @@ export function computeStats(orders, closedDays = []) {
     const ch = (r.channel || 'pos').toLowerCase()
     platformRev[ch] = (platformRev[ch] || 0) + actual
     platformCnt[ch] = (platformCnt[ch] || 0) + 1
+    if (r.has_subsidy) {
+      platformSubsidy[ch] = (platformSubsidy[ch] || 0) + actual
+    } else if ((r.payment || '').toLowerCase() !== 'cash') {
+      platformTransfer[ch] = (platformTransfer[ch] || 0) + actual
+    }
 
     if (ch === 'pos' && actual > 0) {
       const pm = (r.payment || '').toLowerCase()
@@ -146,16 +149,9 @@ export function computeStats(orders, closedDays = []) {
     })
   })
 
-  // ── คำนวณ operating days ──────────────────────────────────────────────────
-  // วันที่มี order จริงๆ (ไม่นับวันหยุดที่บันทึกไว้)
   const tradingDays = Object.keys(dailyMap)
-
-  // วันเปิดร้านจริง = มี order และไม่ได้บันทึกเป็นวันหยุด
   const operatingDays = tradingDays.filter(d => !closedSet.has(d))
-
-  // วันหยุดที่อยู่ในช่วง period ที่ filter มา
   const closedInPeriod = [...closedSet].filter(d => {
-    // ถ้าไม่มี order เลยในช่วงนี้ → ไม่นับ closed days ด้วย
     if (tradingDays.length === 0) return false
     const earliest = tradingDays.slice().sort()[0]
     const latest   = tradingDays.slice().sort().reverse()[0]
@@ -170,15 +166,14 @@ export function computeStats(orders, closedDays = []) {
     dailyMap,
     menuCount, menuRev,
     catRev, catCnt,
-    platformRev, platformCnt,
+    platformRev, platformCnt, platformTransfer, platformSubsidy,
     byHour, byWeekday,
     posPayment,
-    // ── ใหม่ ──
-    operatingDays,        // string[] ของวันที่เปิดร้านจริง
+    operatingDays,
     operatingDaysCount: operatingDays.length,
-    closedInPeriod,       // string[] ของวันหยุดในช่วงนี้
+    closedInPeriod,
     closedInPeriodCount: closedInPeriod.length,
-    dailyAvg,             // เฉลี่ย/วันเปิดร้าน (แม่นยำกว่าเดิม)
+    dailyAvg,
   }
 }
 
