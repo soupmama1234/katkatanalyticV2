@@ -54,7 +54,6 @@ export default function Overview({ allOrders, closedDays = [] }) {
       : filterByPeriod(allOrders, period)
   }, [allOrders, period, from, to])
 
-  // filter closedDays ให้ตรงกับ period
   const filteredClosedDays = useMemo(
     () => filterClosedDays(closedDays, period, from, to),
     [closedDays, period, from, to]
@@ -74,7 +73,7 @@ export default function Overview({ allOrders, closedDays = [] }) {
   }, [allOrders])
 
   const dayCount = Object.keys(s.dailyMap).length || 1
-  const dailyAvg = s.dailyAvg // ← ใช้จาก computeStats (หารด้วยวันเปิดร้านจริง)
+  const dailyAvg = s.dailyAvg
 
   // item count
   let totalItems = 0
@@ -96,35 +95,28 @@ export default function Overview({ allOrders, closedDays = [] }) {
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + '…' : name, qty, rev: s.menuRev[name] || 0 }))
 
-  // platform
+  // platform — เพิ่ม transfer/subsidy/cash
   const platforms = ['pos', 'grab', 'lineman', 'shopee']
     .filter(k => s.platformRev[k] > 0)
-    .map(k => ({ key: k, rev: s.platformRev[k], cnt: s.platformCnt[k] }))
+    .map(k => ({
+      key: k,
+      rev: s.platformRev[k],
+      cnt: s.platformCnt[k],
+      transfer: s.platformTransfer?.[k] || 0,
+      subsidy: s.platformSubsidy?.[k] || 0,
+      cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
+    }))
 
-  // POS payment split (same logic as Dashboard)
+  // POS payment split (ยังคงไว้ใช้ใน posPaymentSummary เดิม)
   const posPaymentSummary = useMemo(() => {
     let cash = 0
     let transfer = 0
-
     orders.forEach(o => {
       const channel = (o.channel || '').toLowerCase()
-
-      // เอาเฉพาะ POS
       if (channel !== 'pos') return
-
-      const amount = Number(
-        o.actualAmount ||
-        o.actual_amount ||
-        0
-      )
-
-      if (o.payment === 'cash') {
-        cash += amount
-      } else {
-        transfer += amount
-      }
+      const amount = Number(o.actualAmount || o.actual_amount || 0)
+      if (o.payment === 'cash') { cash += amount } else { transfer += amount }
     })
-
     return { cash, transfer }
   }, [orders])
 
@@ -142,7 +134,6 @@ export default function Overview({ allOrders, closedDays = [] }) {
   })
   const topMods = Object.entries(modCount).sort((a, b) => b[1] - a[1]).slice(0, 8)
 
-  // ── closed days in period (สำหรับแสดงใน daily history) ──
   const closedSet = new Set(filteredClosedDays.map(d => d.date))
 
   return (
@@ -164,12 +155,9 @@ export default function Overview({ allOrders, closedDays = [] }) {
         <StatCard icon="📈" label="เฉลี่ย/วันเปิด" value={dailyAvg ? `฿${fmt(dailyAvg)}` : '—'} color="var(--primary)" />
       </div>
 
-      {/* Operating days summary — แสดงเฉพาะตอนมีข้อมูล */}
+      {/* Operating days summary */}
       {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 8, marginBottom: 12,
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
           <div style={S.miniCard}>
             <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 4 }}>วันเปิดร้าน</div>
             <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--success)', fontFamily: "'Inter',sans-serif" }}>
@@ -209,22 +197,11 @@ export default function Overview({ allOrders, closedDays = [] }) {
                 <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
                 </div>
-
-                {p.key === 'pos' && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 10,
-                      color: 'var(--dim)',
-                      display: 'flex',
-                      gap: 10,
-                      flexWrap: 'wrap'
-                    }}
-                  >
-                    <span>💵 ฿{fmt(posPaymentSummary.cash)}</span>
-                    <span>📲 ฿{fmt(posPaymentSummary.transfer)}</span>
-                  </div>
-                )}
+                <div style={{ marginTop: 6, fontSize: 10, color: 'var(--dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {p.cash > 0 && <span style={{ color: '#4caf50' }}>💵 ฿{fmt(p.cash)}</span>}
+                  {p.transfer > 0 && <span style={{ color: '#2196f3' }}>📱 ฿{fmt(p.transfer)}</span>}
+                  {p.subsidy > 0 && <span style={{ color: '#32D74B' }}>🏛️ ฿{fmt(p.subsidy)}</span>}
+                </div>
               </div>
               <div style={{ textAlign: 'right', minWidth: 90 }}>
                 <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color }}>฿{fmt(p.rev)}</div>
@@ -310,7 +287,7 @@ export default function Overview({ allOrders, closedDays = [] }) {
         {Object.keys(menuT).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Daily history — แสดง 🔴 วันหยุดด้วย */}
+      {/* Daily history */}
       <div style={S.section}>
         <div style={S.secTitle}>📅 ประวัติรายวัน</div>
         {dailyRows.map(([d, v]) => {
@@ -321,21 +298,12 @@ export default function Overview({ allOrders, closedDays = [] }) {
               <span style={{ flex: 1, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                 {new Date(d).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}
                 {isClosed && (
-                  <span style={{
-                    fontSize: 10, color: '#FF453A',
-                    background: 'rgba(255,69,58,0.1)',
-                    padding: '1px 6px', borderRadius: 6,
-                    border: '1px solid rgba(255,69,58,0.2)',
-                  }}>
+                  <span style={{ fontSize: 10, color: '#FF453A', background: 'rgba(255,69,58,0.1)', padding: '1px 6px', borderRadius: 6, border: '1px solid rgba(255,69,58,0.2)' }}>
                     {closedInfo?.reason || 'หยุด'}
                   </span>
                 )}
               </span>
-              <span style={{
-                color: isClosed ? 'var(--dim)' : 'var(--success)',
-                fontWeight: 700,
-                fontFamily: "'Inter',sans-serif",
-              }}>
+              <span style={{ color: isClosed ? 'var(--dim)' : 'var(--success)', fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>
                 ฿{fmt(v)}
               </span>
             </div>
@@ -350,11 +318,7 @@ export default function Overview({ allOrders, closedDays = [] }) {
 const S = {
   page:        { padding: '0 0 20px' },
   grid4:       { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 },
-  miniCard:    {
-    background: 'var(--surface)', borderRadius: 14,
-    padding: '12px 10px', border: '1px solid var(--border)',
-    textAlign: 'center',
-  },
+  miniCard:    { background: 'var(--surface)', borderRadius: 14, padding: '12px 10px', border: '1px solid var(--border)', textAlign: 'center' },
   section:     { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   secTitle:    { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
