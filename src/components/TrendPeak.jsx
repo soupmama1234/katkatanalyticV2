@@ -16,7 +16,6 @@ function isRealOrder(r) {
   return /\.\d{3,}/.test(r.created_at || '')
 }
 
-// ── helper: filter closedDays ให้ตรงกับ period ──────────────────────────────
 function filterClosedByPeriod(closedDays, period, from, to) {
   if (!closedDays?.length) return []
   const now = new Date()
@@ -52,7 +51,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
     [allOrders, period, from, to]
   )
 
-  // filter closedDays ให้ตรงกับ period
   const filteredClosed = useMemo(
     () => filterClosedByPeriod(closedDays, period, from, to),
     [closedDays, period, from, to]
@@ -63,32 +61,22 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const avg     = orders.length ? Math.round(total / orders.length) : 0
   const maxBill = orders.length ? Math.max(...orders.map(r => r.actual_amount || 0)) : 0
 
-  // เทียบกับช่วงก่อน
   const { prevOrders, prevLabel } = useMemo(() => {
     const now = new Date()
     if (period === '7d') {
       const d1 = new Date(now); d1.setDate(d1.getDate() - 14)
       const d2 = new Date(now); d2.setDate(d2.getDate() - 7)
-      return {
-        prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }),
-        prevLabel: '7 วันก่อน',
-      }
+      return { prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }), prevLabel: '7 วันก่อน' }
     }
     if (period === '30d') {
       const d1 = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const d2 = new Date(now.getFullYear(), now.getMonth(), 1)
-      return {
-        prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }),
-        prevLabel: 'เดือนที่แล้ว',
-      }
+      return { prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }), prevLabel: 'เดือนที่แล้ว' }
     }
     if (period === '1y') {
       const d1 = new Date(now.getFullYear() - 1, 0, 1)
       const d2 = new Date(now.getFullYear(), 0, 1)
-      return {
-        prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }),
-        prevLabel: 'ปีที่แล้ว',
-      }
+      return { prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }), prevLabel: 'ปีที่แล้ว' }
     }
     return { prevOrders: [], prevLabel: '' }
   }, [allOrders, period])
@@ -98,7 +86,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const diff      = total - prevTotal
   const pct       = prevTotal > 0 ? Math.round(diff / prevTotal * 100) : 0
 
-  // closed days set สำหรับ mark บน chart
   const closedSet = useMemo(() => new Set(filteredClosed.map(d => d.date)), [filteredClosed])
 
   const chartData = useMemo(() => {
@@ -108,28 +95,27 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
       sorted.forEach(d => { const k = d.slice(0, 7); monthly[k] = (monthly[k] || 0) + s.dailyMap[d] })
       return Object.keys(monthly).sort().slice(-12).map(k => {
         const [y, m] = k.split('-')
-        return {
-          label: new Date(+y, +m - 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }),
-          value: monthly[k],
-        }
+        return { label: new Date(+y, +m - 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }), value: monthly[k] }
       })
     }
     const n = period === '7d' ? 7 : 30
-    return sorted.slice(-n).map(d => ({
-      label: d.split('-')[2],
-      value: s.dailyMap[d],
-      isClosed: closedSet.has(d),
-    }))
+    return sorted.slice(-n).map(d => ({ label: d.split('-')[2], value: s.dailyMap[d], isClosed: closedSet.has(d) }))
   }, [s.dailyMap, period, closedSet])
 
+  // platforms — แยก transfer/subsidy/cash
   const platforms = ['pos', 'grab', 'lineman', 'shopee']
     .filter(k => s.platformRev[k] > 0)
-    .map(k => ({ key: k, rev: s.platformRev[k], cnt: s.platformCnt[k] }))
+    .map(k => ({
+      key: k,
+      rev: s.platformRev[k],
+      cnt: s.platformCnt[k],
+      transfer: s.platformTransfer?.[k] || 0,
+      subsidy: s.platformSubsidy?.[k] || 0,
+      cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
+    }))
 
   const weekdayData = s.byWeekday.map((d, i) => ({
-    day: DAY_NAMES_SHORT[i],
-    avg: d.cnt ? Math.round(d.rev / d.cnt) : 0,
-    cnt: d.cnt,
+    day: DAY_NAMES_SHORT[i], avg: d.cnt ? Math.round(d.rev / d.cnt) : 0, cnt: d.cnt,
   }))
   const maxWd = Math.max(...weekdayData.map(d => d.avg), 1)
 
@@ -145,12 +131,8 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         <StatCard icon="🔝" label="บิลสูงสุด" value={maxBill ? `฿${fmt(maxBill)}` : '—'} />
       </div>
 
-      {/* Operating days summary */}
       {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 8, marginBottom: 12,
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
           {[
             { label: 'วันเปิดร้าน', value: s.operatingDaysCount, color: 'var(--success)' },
             { label: 'วันหยุด',     value: s.closedInPeriodCount, color: '#FF453A' },
@@ -164,7 +146,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         </div>
       )}
 
-      {/* เทียบช่วงก่อน */}
       {prevOrders.length > 0 && (
         <div style={S.card}>
           <div style={S.cardTitle}>📊 เทียบกับ{prevLabel}</div>
@@ -189,7 +170,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         </div>
       )}
 
-      {/* Line chart — วันหยุด label สีแดง */}
       <div style={S.card}>
         <div style={S.cardTitle}>แนวโน้มยอดขาย</div>
         <ResponsiveContainer width="100%" height={180}>
@@ -218,7 +198,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         )}
       </div>
 
-      {/* Platform */}
+      {/* Platform — แสดง 💵/📱/🏛️ แยก */}
       <div style={S.card}>
         <div style={S.cardTitle}>📡 Platform แยกช่วง</div>
         {platforms.map(p => {
@@ -231,9 +211,14 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
                 <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
                 </div>
+                <div style={{ marginTop: 5, fontSize: 10, color: 'var(--dim)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {p.cash > 0 && <span style={{ color: '#4caf50' }}>💵 ฿{fmt(p.cash)}</span>}
+                  {p.transfer > 0 && <span style={{ color: '#2196f3' }}>📱 ฿{fmt(p.transfer)}</span>}
+                  {p.subsidy > 0 && <span style={{ color: '#32D74B' }}>🏛️ ฿{fmt(p.subsidy)}</span>}
+                </div>
               </div>
               <div style={{ textAlign: 'right', minWidth: 90 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color }}>฿{fmt(p.rev)}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color }}> ฿{fmt(p.rev)}</div>
                 <div style={{ fontSize: 10, color: 'var(--dim)' }}>{p.cnt} บิล</div>
               </div>
             </div>
@@ -316,7 +301,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         )
       })()}
 
-      {/* Weekday bar */}
       <div style={S.card}>
         <div style={S.cardTitle}>📅 วันไหนขายดีสุด (เฉลี่ย)</div>
         <ResponsiveContainer width="100%" height={140}>
@@ -348,7 +332,6 @@ function PeakTab({ allOrders, closedDays = [] }) {
     [allOrders, period, from, to]
   )
 
-  // exclude orders ในวันหยุดออก เพื่อให้ peak hour accurate
   const filteredClosed = useMemo(
     () => filterClosedByPeriod(closedDays, period, from, to),
     [closedDays, period, from, to]
@@ -357,7 +340,6 @@ function PeakTab({ allOrders, closedDays = [] }) {
 
   const realFiltered = useMemo(() => {
     const base = period === 'custom' ? filterByRange(realOrders, from, to) : filterByPeriod(realOrders, period)
-    // exclude วันหยุด
     return base.filter(r => {
       const d = r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA') : ''
       return !closedSet.has(d)
@@ -368,19 +350,11 @@ function PeakTab({ allOrders, closedDays = [] }) {
   const sReal = useMemo(() => computeStats(realFiltered), [realFiltered])
 
   const maxHour   = Math.max(...sReal.byHour.map(h => h.orders), 1)
-  const hourChart = sReal.byHour.map(h => ({
-    label: `${String(h.hour).padStart(2, '0')}:00`,
-    orders: h.orders,
-    revenue: h.revenue,
-  }))
-  const topHours = [...sReal.byHour].filter(h => h.orders > 0)
-    .sort((a, b) => b.orders - a.orders).slice(0, 5)
+  const hourChart = sReal.byHour.map(h => ({ label: `${String(h.hour).padStart(2, '0')}:00`, orders: h.orders, revenue: h.revenue }))
+  const topHours = [...sReal.byHour].filter(h => h.orders > 0).sort((a, b) => b.orders - a.orders).slice(0, 5)
 
   const weekdayData = s.byWeekday.map((d, i) => ({
-    day:     DAY_NAMES_SHORT[i],
-    dayFull: DAY_NAMES_FULL[i],
-    avg:     d.cnt ? Math.round(d.rev / d.cnt) : 0,
-    cnt:     d.cnt,
+    day: DAY_NAMES_SHORT[i], dayFull: DAY_NAMES_FULL[i], avg: d.cnt ? Math.round(d.rev / d.cnt) : 0, cnt: d.cnt,
   }))
   const maxWd = Math.max(...weekdayData.map(d => d.avg), 1)
 
@@ -389,49 +363,32 @@ function PeakTab({ allOrders, closedDays = [] }) {
       <PeriodBar period={period} onChange={setPeriod} options={STANDARD_PERIODS}
         from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
-      {/* แสดงว่า exclude วันหยุดกี่วัน */}
       {filteredClosed.length > 0 && (
-        <div style={{
-          background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.2)',
-          borderRadius: 10, padding: '8px 14px', marginBottom: 12,
-          fontSize: 12, color: '#FF453A',
-        }}>
+        <div style={{ background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.2)', borderRadius: 10, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: '#FF453A' }}>
           🔴 ข้อมูล Peak Hour นี้ exclude {filteredClosed.length} วันหยุดออกแล้ว (แม่นยำขึ้น)
         </div>
       )}
 
-      {/* Hour bar chart */}
-      <div style={S.card}>
+      <div style={S.section}>
         <div style={S.cardTitle}>⏰ ช่วงเวลาขายดี (ต่อชั่วโมง)</div>
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={hourChart} margin={{ left: -15, right: 5 }}>
             <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} interval={2} />
             <YAxis tick={{ fill: '#555', fontSize: 9 }} />
-            <Tooltip {...CHART_TIP} formatter={(v, name) => [
-              name === 'orders' ? `${v} บิล` : `฿${fmt(v)}`,
-              name === 'orders' ? 'ออเดอร์' : 'รายได้',
-            ]} />
+            <Tooltip {...CHART_TIP} formatter={(v, name) => [name === 'orders' ? `${v} บิล` : `฿${fmt(v)}`, name === 'orders' ? 'ออเดอร์' : 'รายได้']} />
             <Bar dataKey="orders" radius={[3, 3, 0, 0]}>
-              {hourChart.map((h, i) => (
-                <Cell key={i} fill={h.orders === maxHour ? 'var(--primary)' : 'rgba(255,159,10,0.2)'} />
-              ))}
+              {hourChart.map((h, i) => (<Cell key={i} fill={h.orders === maxHour ? 'var(--primary)' : 'rgba(255,159,10,0.2)'} />))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Top hours ranked */}
-      <div style={S.card}>
+      <div style={S.section}>
         <div style={S.cardTitle}>🏆 อันดับชั่วโมง</div>
         {topHours.length > 0 ? topHours.map((h, i) => (
           <div key={h.hour} style={S.row}>
-            <div style={{
-              width: 20, fontWeight: 800, fontSize: 12,
-              color: i === 0 ? '#FFD60A' : i === 1 ? '#8E8E93' : i === 2 ? '#CD7F32' : 'var(--dim)',
-            }}>{i + 1}</div>
-            <div style={{ width: 55, fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color: 'var(--dim)' }}>
-              {String(h.hour).padStart(2, '0')}:00
-            </div>
+            <div style={{ width: 20, fontWeight: 800, fontSize: 12, color: i === 0 ? '#FFD60A' : i === 1 ? '#8E8E93' : i === 2 ? '#CD7F32' : 'var(--dim)' }}>{i + 1}</div>
+            <div style={{ width: 55, fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color: 'var(--dim)' }}>{String(h.hour).padStart(2, '0')}:00</div>
             <div style={{ flex: 1, height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.round(h.orders / maxHour * 100)}%`, background: 'var(--primary)', borderRadius: 2 }} />
             </div>
@@ -443,8 +400,7 @@ function PeakTab({ allOrders, closedDays = [] }) {
         )) : <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Weekday bar chart */}
-      <div style={S.card}>
+      <div style={S.section}>
         <div style={S.cardTitle}>📆 วันในสัปดาห์ (เฉลี่ย/บิล)</div>
         <ResponsiveContainer width="100%" height={160}>
           <BarChart data={weekdayData} margin={{ left: -15, right: 5 }}>
@@ -452,16 +408,13 @@ function PeakTab({ allOrders, closedDays = [] }) {
             <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
             <Tooltip {...CHART_TIP} formatter={(v, name, props) => [`฿${fmt(v)} (${props.payload.cnt} วัน)`, 'เฉลี่ย/บิล']} />
             <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
-              {weekdayData.map((d, i) => (
-                <Cell key={i} fill={d.avg === maxWd ? 'var(--success)' : 'rgba(50,215,75,0.25)'} />
-              ))}
+              {weekdayData.map((d, i) => (<Cell key={i} fill={d.avg === maxWd ? 'var(--success)' : 'rgba(50,215,75,0.25)'} />))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Weekday list */}
-      <div style={S.card}>
+      <div style={S.section}>
         {weekdayData.map((d, i) => (
           <div key={i} style={S.row}>
             <div style={{ width: 52, fontSize: 13, fontWeight: 600 }}>{d.dayFull}</div>
@@ -479,14 +432,14 @@ function PeakTab({ allOrders, closedDays = [] }) {
   )
 }
 
-// ─── CompareTab — ไม่เปลี่ยนแปลง (วาง logic เดิมทั้งหมด) ─────────────────────
+// ─── CompareTab ────────────────────────────────────────────────────────────────
 const QUICK_PAIRS = [
-  { key: 'week',    a: '7d',              b: 'prev7d'           },
-  { key: 'month',   a: 'thisMonth',       b: 'lastMonth'        },
-  { key: 'yoy',     a: 'thisMonth',       b: 'sameMonthLastYear' },
-  { key: 'quarter', a: 'thisQ',           b: 'lastQ'            },
-  { key: 'year',    a: 'thisYear',        b: 'lastYear'         },
-  { key: 'today',   a: 'today',           b: 'yesterday'        },
+  { key: 'week',    a: '7d',        b: 'prev7d'            },
+  { key: 'month',   a: 'thisMonth', b: 'lastMonth'         },
+  { key: 'yoy',     a: 'thisMonth', b: 'sameMonthLastYear' },
+  { key: 'quarter', a: 'thisQ',     b: 'lastQ'             },
+  { key: 'year',    a: 'thisYear',  b: 'lastYear'          },
+  { key: 'today',   a: 'today',     b: 'yesterday'         },
 ]
 
 function getPeriodLabel(period, fromDate, toDate) {
@@ -737,6 +690,7 @@ export default function TrendPeak({ allOrders, expenses = [], closedDays = [] })
 // ─── Styles ────────────────────────────────────────────────────────────────────
 const S = {
   card:      { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
+  section:   { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   cardTitle: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
   miniCard:  { background: 'var(--surface)', borderRadius: 14, padding: '10px 12px', border: '1px solid var(--border)', textAlign: 'center' },
   row:       { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
