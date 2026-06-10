@@ -82,6 +82,7 @@ export function exportCSV(data) {
           order_id: o.id, created_at: fmtDate(o.created_at),
           channel: o.channel, payment: o.payment, ref_id: o.ref_id || '',
           total: o.total, actual_amount: o.actual_amount,
+          has_subsidy: o.has_subsidy ? 'true' : 'false',
           member_phone: o.member_phone || '', order_type: o.order_type || '',
           table_number: o.table_number || '', customer_type: o.customer_type || '',
           status: o.status || '', note: o.note || '',
@@ -91,23 +92,24 @@ export function exportCSV(data) {
       } else {
         o.items.forEach((item, idx) => {
           rows.push({
-            order_id: idx === 0 ? o.id : '',
-            created_at: idx === 0 ? fmtDate(o.created_at) : '',
-            channel: idx === 0 ? o.channel : '',
-            payment: idx === 0 ? o.payment : '',
-            ref_id: idx === 0 ? (o.ref_id || '') : '',
-            total: idx === 0 ? o.total : '',
+            order_id:     idx === 0 ? o.id : '',
+            created_at:   idx === 0 ? fmtDate(o.created_at) : '',
+            channel:      idx === 0 ? o.channel : '',
+            payment:      idx === 0 ? o.payment : '',
+            ref_id:       idx === 0 ? (o.ref_id || '') : '',
+            total:        idx === 0 ? o.total : '',
             actual_amount: idx === 0 ? o.actual_amount : '',
+            has_subsidy:  idx === 0 ? (o.has_subsidy ? 'true' : 'false') : '',
             member_phone: idx === 0 ? (o.member_phone || '') : '',
-            order_type: idx === 0 ? (o.order_type || '') : '',
+            order_type:   idx === 0 ? (o.order_type || '') : '',
             table_number: idx === 0 ? (o.table_number || '') : '',
             customer_type: idx === 0 ? (o.customer_type || '') : '',
-            status: idx === 0 ? (o.status || '') : '',
-            note: idx === 0 ? (o.note || '') : '',
-            item_name: item.name,
-            item_qty: item.qty,
-            item_price: item.price,
-            modifier_name: item.modifier_name || '',
+            status:       idx === 0 ? (o.status || '') : '',
+            note:         idx === 0 ? (o.note || '') : '',
+            item_name:    item.name,
+            item_qty:     item.qty,
+            item_price:   item.price,
+            modifier_name:  item.modifier_name || '',
             modifier_price: item.modifier_price || '',
           })
         })
@@ -115,7 +117,7 @@ export function exportCSV(data) {
     })
     files['orders'] = toCSV(rows, [
       'order_id','created_at','channel','payment','ref_id',
-      'total','actual_amount','member_phone','order_type',
+      'total','actual_amount','has_subsidy','member_phone','order_type',
       'table_number','customer_type','status','note',
       'item_name','item_qty','item_price','modifier_name','modifier_price',
     ])
@@ -210,16 +212,19 @@ export function exportCSV(data) {
 
 // ── TXT ไฟล์ 1: Orders ──
 function buildOrdersTXT(data) {
-  const orders   = data.orders || []
-  const members  = data.members || []
-  const label    = dateLabel(data)
+  const orders      = data.orders || []
+  const members     = data.members || []
+  const label       = dateLabel(data)
+  const subsidyLabel = data.meta?.subsidy_label || 'โครงการรัฐ'
 
   const memberMap = {}
   members.forEach(m => { memberMap[m.phone] = m })
 
-  const totalRevenue  = orders.reduce((s, o) => s + (o.actual_amount || 0), 0)
-  const totalBills    = orders.length
-  const avgBill       = totalBills ? Math.round(totalRevenue / totalBills) : 0
+  const totalRevenue   = orders.reduce((s, o) => s + (o.actual_amount || 0), 0)
+  const totalBills     = orders.length
+  const avgBill        = totalBills ? Math.round(totalRevenue / totalBills) : 0
+  const subsidyCount   = orders.filter(o => o.has_subsidy).length
+  const subsidyRevenue = orders.filter(o => o.has_subsidy).reduce((s, o) => s + (o.actual_amount || 0), 0)
 
   let txt = `# KATKAT POS — ประวัติการขาย (${label})
 สร้างเมื่อ: ${fmtDate(data.meta?.exported_at)}
@@ -228,9 +233,13 @@ function buildOrdersTXT(data) {
 - ยอดรวม: ฿${fmtMoney(totalRevenue)}
 - จำนวนบิล: ${totalBills} บิล
 - เฉลี่ย/บิล: ฿${fmtMoney(avgBill)}
-- ช่องทาง: ${[...new Set(orders.map(o => o.channel))].join(', ')}
+- ช่องทาง: ${[...new Set(orders.map(o => o.channel))].join(', ')}\n`
 
-## รายการออเดอร์\n`
+  if (subsidyCount > 0) {
+    txt += `- ใช้สิทธิ์${subsidyLabel}: ${subsidyCount} บิล (฿${fmtMoney(subsidyRevenue)})\n`
+  }
+
+  txt += `\n## รายการออเดอร์\n`
 
   orders.forEach(o => {
     const member = o.member_phone ? memberMap[o.member_phone] : null
@@ -248,6 +257,7 @@ function buildOrdersTXT(data) {
     })
 
     txt += `  ชำระ: ${o.payment || '-'}`
+    if (o.has_subsidy) txt += ` | 🇹🇭 ${subsidyLabel}`
     if (o.ref_id) txt += ` | Ref: ${o.ref_id}`
     txt += ` | รวม: ฿${fmtMoney(o.actual_amount)}\n`
     if (o.note) txt += `  หมายเหตุ: ${o.note}\n`
@@ -477,9 +487,9 @@ function buildMenuConfigTXT(data) {
 export function exportTXT(data) {
   const label = dateLabel(data)
   const files = [
-    { name: `katkat_orders_${label}.txt`,     content: buildOrdersTXT(data)     },
-    { name: `katkat_members_${label}.txt`,    content: buildMembersTXT(data)    },
-    { name: `katkat_expenses_${label}.txt`,   content: buildExpensesTXT(data)   },
+    { name: `katkat_orders_${label}.txt`,      content: buildOrdersTXT(data)     },
+    { name: `katkat_members_${label}.txt`,     content: buildMembersTXT(data)    },
+    { name: `katkat_expenses_${label}.txt`,    content: buildExpensesTXT(data)   },
     { name: `katkat_menu_config_${label}.txt`, content: buildMenuConfigTXT(data) },
   ]
 

@@ -90,6 +90,7 @@ async function fetchOrders(fromDate, toDate) {
     total:         o.total,
     actual_amount: o.actual_amount || 0,
     is_settled:    o.is_settled,
+    has_subsidy:   o.has_subsidy   || false,
     member_phone:  o.member_phone  || null,
     order_type:    o.order_type    || null,
     table_number:  o.table_number  || null,
@@ -175,6 +176,16 @@ async function fetchStaff() {
     .order('created_at')
   if (error) throw new Error(`[staff] ${error.message}`)
   return data || []
+}
+
+// ดึง subsidy label จาก settings table — ไม่ throw ถ้า fail (non-critical)
+async function fetchSubsidyLabel() {
+  try {
+    const { data } = await sb.from('settings').select('value').eq('key', 'subsidy').single()
+    return data?.value?.label || 'โครงการรัฐ'
+  } catch {
+    return 'โครงการรัฐ'
+  }
 }
 
 // ─── Main Export Function ─────────────────────────────────────────────────────
@@ -266,13 +277,17 @@ export async function fetchBackupData(opts = {}) {
 
   const hasErrors = Object.keys(errors).length > 0
 
+  // ดึง subsidy label สำหรับ TXT export (ไม่นับใน progress เพราะ non-critical)
+  const subsidyLabel = await fetchSubsidyLabel()
+
   return {
     meta: {
-      exported_at:  new Date().toISOString(),
-      from_date:    fromDate,
-      to_date:      toDate,
-      mask_phones:  maskPhones,
-      members_note: 'members = full dump (not filtered by date range)',
+      exported_at:   new Date().toISOString(),
+      from_date:     fromDate,
+      to_date:       toDate,
+      mask_phones:   maskPhones,
+      subsidy_label: subsidyLabel,
+      members_note:  'members = full dump (not filtered by date range)',
       summary,
       errors: hasErrors ? errors : undefined,
     },
