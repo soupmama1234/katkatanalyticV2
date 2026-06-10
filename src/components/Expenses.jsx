@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+'Backup'p' { useState, useMemo, useCallback } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { supabase } from '../supabase.js'
 import {
@@ -13,7 +13,7 @@ import Backup      from './expenses/Backup.jsx'
 import Forecast    from './expenses/Forecast.jsx'
 import ClosedDays from './expenses/ClosedDays.jsx'
 
-const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Backup']
+const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Export']
 
 
 export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes, closedDays, setClosedDays }) {
@@ -40,7 +40,7 @@ export default function Expenses({ expenses, setExpenses, allOrders, actionNotes
       {tab === 'Forecast'  && <Forecast        expenses={expenses} />}
       {tab === 'Action'    && <ActionNotes     actionNotes={actionNotes} setActionNotes={setActionNotes} notify={notify} confirm={confirm} />}
       {tab === 'วันหยุด' && <ClosedDays closedDays={closedDays} setClosedDays={setClosedDays} notify={notify} confirm={confirm} />}
-      {tab === 'Backup'    && <Backup          allOrders={allOrders} notify={notify} />}
+      {tab === 'Export'    && <Backup          allOrders={allOrders} notify={notify} />}
 
       <Toast toast={toast} />
       <ConfirmDialog dialog={dialog} onConfirm={handleConfirm} />
