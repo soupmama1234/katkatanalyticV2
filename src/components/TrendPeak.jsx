@@ -445,7 +445,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </div>
   )
 }
 
