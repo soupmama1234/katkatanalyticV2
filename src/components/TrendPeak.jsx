@@ -180,17 +180,20 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const { adsByPlatform, gpByPlatform } = useMemo(() => {
     const ads = {}
     const gp = {}
-
-   for (const e of expenses) {
+  const filteredExpenses =
+    period === 'custom'
+      ? filterExpByRange(expenses, from, to)
+      : filterExpByPeriod(expenses, period)
+  for (const e of filteredExpenses) {
   const cat = (e.category || '').toLowerCase().trim()
 
   let ch = (e.channel || 'pos').toLowerCase().trim()
 
-  // 🔥 normalize platform ให้เข้ากับระบบคุณ
+  // map platform ให้ตรง
   if (ch.includes('grab')) ch = 'grab'
   else if (ch.includes('line')) ch = 'lineman'
   else if (ch.includes('shopee')) ch = 'shopee'
-  else ch = 'pos'
+  else if (!['pos', 'grab', 'lineman', 'shopee'].includes(ch)) ch = 'pos'
 
   if (cat.includes('ads')) {
     ads[ch] = (ads[ch] || 0) + (e.amount || 0)
