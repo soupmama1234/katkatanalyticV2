@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { supabase } from '../supabase.js'
 import {
@@ -84,7 +84,22 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
   }, [expenses])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+useEffect(() => {
+  if (
+    !form.item &&
+    form.platform &&
+    ['GP Platform', 'Ads Platform'].includes(form.category)
+  ) {
+    const p = PLATFORMS.find(x => x.key === form.platform)
 
+    set('item',
+      form.category === 'GP Platform'
+        ? `GP ${p?.label || ''}`
+        : `Ads ${p?.label || ''}`
+    )
+  }
+}, [form.category, form.platform])
+  
   const calcAuto = (qty, ppu, amount, disc, direction) => {
     const q = parseFloat(qty) || 0
     const p = parseFloat(ppu) || 0
@@ -128,16 +143,17 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
   }
 
   const handleSubmit = async () => {
-    if (!form.item.trim())     return notify('กรุณาใส่ชื่อรายการ', 'warning')
-    if (!form.category)        return notify('กรุณาเลือกหมวดหมู่', 'warning')
+    if (!form.item.trim()) return notify('กรุณาใส่ชื่อรายการ', 'warning')
+    if (!form.category) return notify('กรุณาเลือกหมวดหมู่', 'warning')
     if (!parseFloat(form.amount)) return notify('กรุณาใส่ยอดเงิน', 'warning')
-    setSaving(true)
+
     if (
-  ['GP Platform', 'Ads Platform'].includes(form.category) &&
-  !form.platform
-) {
-  return notify('กรุณาเลือก Platform', 'warning')
-    }
+      ['GP Platform', 'Ads Platform'].includes(form.category) &&
+      !form.platform
+    ) {
+    return notify('กรุณาเลือก Platform', 'warning')
+  }
+  setSaving(true)
     try {
       const qty = parseFloat(form.quantity) || null
       const ppu = parseFloat(form.pricePerUnit) || (qty && form.amount ? Math.round(parseFloat(form.amount) / qty * 100) / 100 : null)
@@ -649,16 +665,35 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
 
   const startEdit = (e) => {
     setEditId(e.id)
-    setEditData({ item: e.item || '', amount: e.amount || '', quantity: e.quantity || '', unit: e.unit || '', date: e.date || '', vendor: e.vendor || '', price_per_unit: e.price_per_unit || '' })
+
+    setEditData({
+      item: e.item || '',
+      amount: e.amount || '',
+      quantity: e.quantity || '',
+      unit: e.unit || '',
+      date: e.date || '',
+      vendor: e.vendor || '',
+      price_per_unit: e.price_per_unit || '',
+      category: e.category || '',
+      platform: e.platform || '',
+    })
   }
 
   const saveEdit = async () => {
-    const { error } = await supabase.from('expenses').update({
-      item: editData.item, amount: parseFloat(editData.amount) || 0,
-      quantity: parseFloat(editData.quantity) || null, unit: editData.unit || null,
-      date: editData.date || null, vendor: editData.vendor || null,
+  const { error } = await supabase
+    .from('expenses')
+    .update({
+      item: editData.item,
+      amount: parseFloat(editData.amount) || 0,
+      quantity: parseFloat(editData.quantity) || null,
+      unit: editData.unit || null,
+      date: editData.date || null,
+      vendor: editData.vendor || null,
       price_per_unit: parseFloat(editData.price_per_unit) || null,
-    }).eq('id', editId)
+      category: editData.category,
+      platform: editData.platform || null,
+    })
+    .eq('id', editId)
     if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
     setExpenses(prev => prev.map(e => e.id === editId ? { ...e, ...editData, amount: parseFloat(editData.amount), quantity: parseFloat(editData.quantity) || null } : e))
     setEditId(null)
@@ -680,29 +715,159 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
         return (
           <div key={e.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
             {isEdit ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {[['รายการ', 'item', 'text'], ['วันที่', 'date', 'date'], ['จำนวน', 'quantity', 'number'], ['หน่วย', 'unit', 'text'], ['฿/หน่วย', 'price_per_unit', 'number'], ['ยอดรวม', 'amount', 'number'], ['ร้าน', 'vendor', 'text']].map(([label, key, type]) => (
-                    <div key={key}>
-                      <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 2 }}>{label}</div>
-                      <input type={type} value={editData[key]} onChange={ev => setEditData(d => ({ ...d, [key]: ev.target.value }))}
-                        style={{ ...INPUT, padding: '7px 10px', fontSize: 13 }} />
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => setEditId(null)} style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--dim)', borderRadius: 10, padding: 10, cursor: 'pointer', fontFamily: 'inherit' }}>ยกเลิก</button>
-                  <button onClick={saveEdit} style={{ flex: 2, background: 'var(--primary)', border: 'none', color: '#000', borderRadius: 10, padding: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>💾 บันทึก</button>
-                  <button onClick={() => handleDelete(e.id)} style={{ background: 'rgba(255,69,58,0.15)', border: '1px solid #FF453A44', color: 'var(--danger)', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>🗑</button>
-                </div>
-              </div>
-            ) : (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+      {[
+        ['รายการ', 'item', 'text'],
+        ['วันที่', 'date', 'date'],
+        ['จำนวน', 'quantity', 'number'],
+        ['หน่วย', 'unit', 'text'],
+        ['฿/หน่วย', 'price_per_unit', 'number'],
+        ['ยอดรวม', 'amount', 'number'],
+        ['ร้าน', 'vendor', 'text']
+      ].map(([label, key, type]) => (
+        <div key={key}>
+          <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 2 }}>
+            {label}
+          </div>
+
+          <input
+            type={type}
+            value={editData[key] || ''}
+            onChange={ev =>
+              setEditData(d => ({
+                ...d,
+                [key]: ev.target.value
+              }))
+            }
+            style={{ ...INPUT, padding: '7px 10px', fontSize: 13 }}
+          />
+        </div>
+      ))}
+    </div>
+
+    {/* Category */}
+    <div>
+      <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 2 }}>
+        หมวดหมู่
+      </div>
+
+      <select
+        value={editData.category || ''}
+        onChange={ev =>
+          setEditData(d => ({
+            ...d,
+            category: ev.target.value
+          }))
+        }
+        style={INPUT}
+      >
+        {EXP_CATS.map(c => (
+          <option key={c.key} value={c.key}>
+            {c.icon} {c.key}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    {/* Platform */}
+    {['GP Platform', 'Ads Platform'].includes(editData.category) && (
+      <div>
+        <div style={{ fontSize: 9, color: 'var(--dim)', marginBottom: 2 }}>
+          Platform
+        </div>
+
+        <select
+          value={editData.platform || ''}
+          onChange={ev =>
+            setEditData(d => ({
+              ...d,
+              platform: ev.target.value
+            }))
+          }
+          style={INPUT}
+        >
+          <option value="">เลือก Platform</option>
+
+          {PLATFORMS.map(p => (
+            <option key={p.key} value={p.key}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    )}
+
+    <div style={{ display: 'flex', gap: 8 }}>
+      <button
+        onClick={() => setEditId(null)}
+        style={{
+          flex: 1,
+          background: 'var(--surface2)',
+          border: '1px solid var(--border2)',
+          color: 'var(--dim)',
+          borderRadius: 10,
+          padding: 10,
+          cursor: 'pointer',
+          fontFamily: 'inherit'
+        }}
+      >
+        ยกเลิก
+      </button>
+
+      <button
+        onClick={saveEdit}
+        style={{
+          flex: 2,
+          background: 'var(--primary)',
+          border: 'none',
+          color: '#000',
+          borderRadius: 10,
+          padding: 10,
+          fontWeight: 800,
+          cursor: 'pointer',
+          fontFamily: 'inherit'
+        }}
+      >
+        💾 บันทึก
+      </button>
+
+      <button
+        onClick={() => handleDelete(e.id)}
+        style={{
+          background: 'rgba(255,69,58,0.15)',
+          border: '1px solid #FF453A44',
+          color: 'var(--danger)',
+          borderRadius: 10,
+          padding: '10px 12px',
+          cursor: 'pointer',
+          fontFamily: 'inherit'
+        }}
+      >
+        🗑
+      </button>
+    </div>
+  </div>
+) : (
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{e.item}</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: cat?.color || '#888', background: 'var(--surface2)', padding: '2px 7px', borderRadius: 6 }}>{cat?.icon} {e.category}</span>
                     {e.vendor && <span style={{ fontSize: 10, color: 'var(--dim)' }}>{e.vendor}</span>}
+                    {e.platform && (
+  <span
+    style={{
+      fontSize: 10,
+      color: 'var(--primary)',
+      background: 'var(--surface2)',
+      padding: '2px 7px',
+      borderRadius: 6
+    }}
+  >
+    {PLATFORMS.find(p => p.key === e.platform)?.label || e.platform}
+  </span>
+)}
                     {e.date && <span style={{ fontSize: 10, color: 'var(--dim)' }}>{e.date}</span>}
                   </div>
                   {(e.quantity || e.price_per_unit) && (
