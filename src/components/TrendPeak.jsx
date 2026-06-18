@@ -348,13 +348,20 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
     p.key === 'grab' ? '#00B14F' :
     p.key === 'lineman' ? '#00A84F' :
     p.key === 'shopee' ? '#EE4D2D' :
-    '#3B82F6'
+    'var(--primary)'
 
   return (
-    <div key={p.key} style={{ ...S.row, alignItems: 'flex-start' }}>
-      {/* PLATFORM NAME */}
+    <div key={p.key} style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: '10px 0',
+      borderBottom: '1px solid var(--border2)'
+    }}>
+
+      {/* LEFT */}
       <div style={{ width: 70 }}>
-        <div style={{ fontWeight: 800, fontSize: 13, color }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color }}>
           {p.key.toUpperCase()}
         </div>
         <div style={{ fontSize: 10, color: 'var(--dim)' }}>
@@ -362,7 +369,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         </div>
       </div>
 
-      {/* BAR */}
+      {/* MID BAR */}
       <div style={{ flex: 1 }}>
         <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
           <div
@@ -375,14 +382,14 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           />
         </div>
 
-        <div style={{ fontSize: 10, marginTop: 6, color: 'var(--dim)' }}>
+        <div style={{ fontSize: 10, marginTop: 5, color: 'var(--dim)' }}>
           💵 {fmt(p.cash)} 📱 {fmt(p.transfer)} 🏛️ {fmt(p.subsidy)}
         </div>
       </div>
 
-      {/* VALUE */}
-      <div style={{ textAlign: 'right', minWidth: 100 }}>
-        <div style={{ fontWeight: 800, fontSize: 14, color }}>
+      {/* RIGHT */}
+      <div style={{ textAlign: 'right', minWidth: 90 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color }}>
           ฿{fmt(p.rev)}
         </div>
 
@@ -394,14 +401,13 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           GP -{fmt(p.gp)}
         </div>
 
-        <div style={{ fontWeight: 800, fontSize: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 800 }}>
           Net {fmt(p.net)}
         </div>
       </div>
+})}
     </div>
   )
-})}
-
       {/* 💸 ต้นทุน vs รายรับ */}
       {expenses && expenses.length > 0 && (() => {
         const monthlyRev = {}, monthlyExp = {}
