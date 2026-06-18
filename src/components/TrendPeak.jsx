@@ -45,6 +45,12 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const [period, setPeriod] = useState('7d')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo] = useState(todayStr)
+  const PLATFORM_STYLE = {
+  pos:      { color: '#A0A0A0' },
+  grab:     { color: '#00B14F' },
+  lineman:  { color: '#00C300' },
+  shopee:   { color: '#EE4D2D' },
+  }
 
   // ─────────────────────────────
   // ORDERS
@@ -340,9 +346,9 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
 
           return (
             <div key={p.key} style={S.row}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>
+              <span style={{ color: style.color, fontWeight: 700, fontSize: 12 }}>
   {p.key.toUpperCase()}
-</div>
+</span>
 
               <div style={{ flex: 1 }}>
                 <div style={{ height: 4, background: '#1a1a1a' }}>
