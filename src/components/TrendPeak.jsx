@@ -352,9 +352,6 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           )
         })}
       </div>
-    </div>
-  )
-}
 
       {/* 💸 ต้นทุน vs รายรับ */}
       {expenses && expenses.length > 0 && (() => {
@@ -445,6 +442,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+    </div>
   )
 }
 
