@@ -132,7 +132,11 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
     if (!form.category)        return notify('กรุณาเลือกหมวดหมู่', 'warning')
     if (!parseFloat(form.amount)) return notify('กรุณาใส่ยอดเงิน', 'warning')
     setSaving(true)
-    if (['GP Platform', 'Ads Platform'].includes(form.category) &&  !form.platform)  return notify('กรุณาเลือก Platform', 'warning')
+    if (
+  ['GP Platform', 'Ads Platform'].includes(form.category) &&
+  !form.platform
+) {
+  return notify('กรุณาเลือก Platform', 'warning')
     }
     try {
       const qty = parseFloat(form.quantity) || null
