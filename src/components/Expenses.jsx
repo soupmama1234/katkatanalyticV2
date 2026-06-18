@@ -456,7 +456,39 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
             ))}
           </div>
         </Field>
-
+{['GP Platform', 'Ads Platform'].includes(form.category) && (
+  <Field label="Platform">
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {PLATFORMS.map(p => (
+        <button
+          key={p.key}
+          onClick={() => set('platform', p.key)}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 10,
+            border: `1px solid ${
+              form.platform === p.key ? p.color : 'var(--border2)'
+            }`,
+            background:
+              form.platform === p.key
+                ? p.color
+                : 'var(--surface2)',
+            color:
+              form.platform === p.key
+                ? '#000'
+                : 'var(--dim)',
+            fontSize: 12,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontWeight: form.platform === p.key ? 700 : 400,
+          }}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  </Field>
+)}
         <Field label="รายการ">
           <AutoComplete
             value={form.item}
