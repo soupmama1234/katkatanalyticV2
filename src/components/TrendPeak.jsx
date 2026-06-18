@@ -181,18 +181,25 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
     const ads = {}
     const gp = {}
 
-    for (const e of expenses) {
-      const cat = (e.category || '').toLowerCase().trim()
-      const ch  = (e.channel || 'pos').toLowerCase().trim()
+   for (const e of expenses) {
+  const cat = (e.category || '').toLowerCase().trim()
 
-      if (cat.includes('ads')) {
-        ads[ch] = (ads[ch] || 0) + (e.amount || 0)
-      }
-  
-      if (cat.includes('gp')) {
-        gp[ch] = (gp[ch] || 0) + (e.amount || 0)
-      }
-    }
+  let ch = (e.channel || 'pos').toLowerCase().trim()
+
+  // 🔥 normalize platform ให้เข้ากับระบบคุณ
+  if (ch.includes('grab')) ch = 'grab'
+  else if (ch.includes('line')) ch = 'lineman'
+  else if (ch.includes('shopee')) ch = 'shopee'
+  else ch = 'pos'
+
+  if (cat.includes('ads')) {
+    ads[ch] = (ads[ch] || 0) + (e.amount || 0)
+  }
+
+  if (cat.includes('gp')) {
+    gp[ch] = (gp[ch] || 0) + (e.amount || 0)
+  }
+}
 
     return { adsByPlatform: ads, gpByPlatform: gp }
   }, [expenses])
