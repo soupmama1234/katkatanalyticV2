@@ -182,13 +182,14 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
     const gp = {}
 
     for (const e of expenses) {
-      const ch = (e.channel || 'pos').toLowerCase()
+      const cat = (e.category || '').toLowerCase().trim()
+      const ch  = (e.channel || 'pos').toLowerCase().trim()
 
-      if (e.category === 'ads') {
+      if (cat.includes('ads')) {
         ads[ch] = (ads[ch] || 0) + (e.amount || 0)
       }
-
-      if (e.category === 'gp') {
+  
+      if (cat.includes('gp')) {
         gp[ch] = (gp[ch] || 0) + (e.amount || 0)
       }
     }
