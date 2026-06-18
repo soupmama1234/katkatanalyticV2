@@ -177,35 +177,36 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   // ─────────────────────────────
   // COST MAP (OPTIMIZED)
   // ─────────────────────────────
-  const { adsByPlatform, gpByPlatform } = useMemo(() => {
-    const ads = {}
-    const gp = {}
-    const ch = (e.platform || 'pos').toLowerCase().trim()
+ const { adsByPlatform, gpByPlatform } = useMemo(() => {
+  const ads = {}
+  const gp = {}
+
   const filteredExpenses =
     period === 'custom'
       ? filterExpByRange(expenses, from, to)
       : filterExpByPeriod(expenses, period)
+
   for (const e of filteredExpenses) {
-  const cat = (e.category || '').toLowerCase().trim()
+    const cat = (e.category || '').toLowerCase().trim()
 
-let platform = (e.platform || 'pos').toLowerCase().trim()
+    let platform = (e.platform || 'pos').toLowerCase().trim()
 
-if (platform.includes('grab')) platform = 'grab'
-else if (platform.includes('line')) platform = 'lineman'
-else if (platform.includes('shopee')) platform = 'shopee'
-else platform = 'pos'
+    if (platform.includes('grab')) platform = 'grab'
+    else if (platform.includes('line')) platform = 'lineman'
+    else if (platform.includes('shopee')) platform = 'shopee'
+    else platform = 'pos'
 
-  if (cat.includes('ads')) {
-    ads[ch] = (ads[ch] || 0) + (e.amount || 0)
+    if (cat.includes('ads')) {
+      ads[platform] = (ads[platform] || 0) + (e.amount || 0)
+    }
+
+    if (cat.includes('gp')) {
+      gp[platform] = (gp[platform] || 0) + (e.amount || 0)
+    }
   }
 
-  if (cat.includes('gp')) {
-    gp[ch] = (gp[ch] || 0) + (e.amount || 0)
-  }
-}
-
-    return { adsByPlatform: ads, gpByPlatform: gp }
-  }, [expenses])
+  return { adsByPlatform: ads, gpByPlatform: gp }
+}, [expenses, period, from, to])
 
   // ─────────────────────────────
   // PLATFORM
