@@ -180,6 +180,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const { adsByPlatform, gpByPlatform } = useMemo(() => {
     const ads = {}
     const gp = {}
+    const ch = (e.platform || 'pos').toLowerCase().trim()
   const filteredExpenses =
     period === 'custom'
       ? filterExpByRange(expenses, from, to)
@@ -187,13 +188,12 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   for (const e of filteredExpenses) {
   const cat = (e.category || '').toLowerCase().trim()
 
-  let ch = (e.channel || 'pos').toLowerCase().trim()
+let platform = (e.platform || 'pos').toLowerCase().trim()
 
-  // map platform ให้ตรง
-  if (ch.includes('grab')) ch = 'grab'
-  else if (ch.includes('line')) ch = 'lineman'
-  else if (ch.includes('shopee')) ch = 'shopee'
-  else if (!['pos', 'grab', 'lineman', 'shopee'].includes(ch)) ch = 'pos'
+if (platform.includes('grab')) platform = 'grab'
+else if (platform.includes('line')) platform = 'lineman'
+else if (platform.includes('shopee')) platform = 'shopee'
+else platform = 'pos'
 
   if (cat.includes('ads')) {
     ads[ch] = (ads[ch] || 0) + (e.amount || 0)
