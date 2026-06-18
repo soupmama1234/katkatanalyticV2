@@ -340,13 +340,13 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
 
           return (
             <div key={p.key} style={S.row}>
-              <div style={{ width: 60, fontWeight: 700 }}>
-                {p.key.toUpperCase()}
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>
+  {p.key.toUpperCase()}
+</div>
 
               <div style={{ flex: 1 }}>
                 <div style={{ height: 4, background: '#1a1a1a' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: 'var(--primary)' }} />
+                  <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary), rgba(50,215,75,0.6))' }} />
                 </div>
 
                 <div style={{ fontSize: 10, marginTop: 4 }}>
@@ -355,10 +355,21 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
               </div>
 
               <div style={{ textAlign: 'right', minWidth: 90 }}>
-                <div>฿{fmt(p.rev)}</div>
-                <div style={{ fontSize: 10, color: '#FF453A' }}>Ads -{fmt(p.ads)}</div>
-                <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP -{fmt(p.gp)}</div>
-                <div style={{ fontWeight: 800 }}>Net {fmt(p.net)}</div>
+                <<div style={{ fontSize: 13, fontWeight: 800 }}>
+  ฿{fmt(p.rev)}
+</div>
+
+<div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 2 }}>
+  Ads <span style={{ color: 'var(--danger)' }}>-฿{fmt(p.ads)}</span>
+</div>
+
+<div style={{ fontSize: 10, color: 'var(--dim)' }}>
+  GP <span style={{ color: 'var(--warning)' }}>-฿{fmt(p.gp)}</span>
+</div>
+
+<div style={{ fontWeight: 800, marginTop: 4, color: p.net >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+  Net ฿{fmt(p.net)}
+</div>
               </div>
             </div>
           )
