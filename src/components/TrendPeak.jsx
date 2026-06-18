@@ -355,7 +355,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
               </div>
 
               <div style={{ textAlign: 'right', minWidth: 90 }}>
-                <<div style={{ fontSize: 13, fontWeight: 800 }}>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>
   ฿{fmt(p.rev)}
 </div>
 
