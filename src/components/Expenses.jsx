@@ -50,7 +50,7 @@ export default function Expenses({ expenses, setExpenses, allOrders, actionNotes
 
 // ─── FORM ────────────────────────────────────────────────────────────────────
 function ExpenseForm({ expenses, setExpenses, notify }) {
-  const emptyForm = { date: todayStr, item: '', category: '', quantity: '', unit: '', pricePerUnit: '', amount: '', discount: '', vendor: '', payment: '', note: '' }
+  const emptyForm = { date: todayStr, item: '', category: ',platform: '',', quantity: '', unit: '', pricePerUnit: '', amount: '', discount: '', vendor: '', payment: '', note: '' }
   const [form, setForm]         = useState(emptyForm)
   const [saving, setSaving]     = useState(false)
   const [ocrLoading, setOcrLoading] = useState(false)
