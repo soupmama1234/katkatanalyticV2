@@ -283,7 +283,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <label style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', jussetUserSetCattetCatrSetCatntent: 'center', gap: 8,
               background: 'linear-gradient(135deg,#1a2e1a,#162e16)', border: '1px solid #4caf5044',
               borderRadius: 14, padding: '14px', color: '#4caf50', fontWeight: 700, fontSize: 13,
               cursor: 'pointer', fontFamily: 'inherit',
@@ -447,7 +447,11 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         <Field label="หมวดหมู่">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {EXP_CATS.map(c => (
-              <button key={c.key} onClick={() => { set('category', c.key); setUserSetCat(true) }} style={{
+              <button key={c.key} onClick={() => { set('category', c.key);  if (
+    !['GP Platform', 'Ads Platform'].includes(c.key)
+  ) {
+    set('platform', '')
+              } setUserSetCat(true) }} style={{
                 padding: '6px 10px', borderRadius: 10, border: `1px solid ${form.category === c.key ? c.color : 'var(--border2)'}`,
                 background: form.category === c.key ? c.color : 'var(--surface2)',
                 color: form.category === c.key ? '#000' : 'var(--dim)',
