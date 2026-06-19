@@ -10,7 +10,6 @@ import {
 } from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
-// ── filter closedDays ให้อยู่ในช่วง period เดียวกับ orders ──────────────────
 function filterClosedDays(closedDays, period, from, to) {
   if (!closedDays?.length) return []
   if (period === 'custom') {
@@ -39,7 +38,6 @@ function filterClosedDays(closedDays, period, from, to) {
     const cutoff = d.toLocaleDateString('en-CA')
     return closedDays.filter(d => d.date >= cutoff)
   }
-  // 'all'
   return closedDays
 }
 
@@ -47,6 +45,19 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
   const [period, setPeriod] = useState('today')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
+
+  const [showGpConfig, setShowGpConfig] = useState(false)
+  const [gpRates, setGpRates] = useState({
+    grab: 33.70,          
+    lineman: 32.10,       
+    shopee: 32.10,
+    pos: 0.00,
+    govSubsidy: 9.63      
+  })
+
+  const handleRateChange = (key, val) => {
+    setGpRates(prev => ({ ...prev, [key]: Number(val) || 0 }))
+  }
 
   const orders = useMemo(() => {
     return period === 'custom'
@@ -72,10 +83,8 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     return t.reduce((s, r) => s + (r.actual_amount || 0), 0)
   }, [allOrders])
 
-  const dayCount = Object.keys(s.dailyMap).length || 1
   const dailyAvg = s.dailyAvg
 
-  // item count
   let totalItems = 0
   const menuT = {}
   orders.forEach(r => {
@@ -90,20 +99,17 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     })
   })
 
-  // top menu for chart
   const topMenu = Object.entries(s.menuCount)
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + '…' : name, qty, rev: s.menuRev[name] || 0 }))
 
-  // ── คำนวณยอด Ads และ GP แยกตาม Platform จากก้อน expenses ──────────────────
   const { adsByPlatform, gpByPlatform } = useMemo(() => {
     const ads = {}
     const gp = {}
 
-    // เรียกฟังก์ชันฟิลเตอร์ตาม period เดียวกับฝั่งออเดอร์
     const filteredExpenses =
       period === 'custom'
-        ? filterByRange(expenses, from, to) // ใน Overview ใช้ชื่อฟังก์ชัน filterByRange / filterByPeriod
+        ? filterByRange(expenses, from, to)
         : filterByPeriod(expenses, period)
 
     for (const e of filteredExpenses) {
@@ -126,7 +132,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     return { adsByPlatform: ads, gpByPlatform: gp }
   }, [expenses, period, from, to])
 
-  // platform — ดึงสถิติมัดรวม Ads / GP จากตัวแปร s (computeStats) มาใช้ตรงๆ
   const platforms = useMemo(() => {
     return ['pos', 'grab', 'lineman', 'shopee']
       .filter(k => (s.platformRev?.[k] || 0) > 0)
@@ -135,46 +140,45 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
 
+        // FACT: ยอดโครงการรัฐบาลคือ Subsidy (🏛️) เท่านั้น ห้ามเอา Transfer (📱) มารวม
+        const govSales = k === 'pos' ? 0 : (s.platformSubsidy?.[k] || 0)
+
+        // ป้องกันบั๊กข้ามวัน: ยอดโครงการรัฐต้องไม่เกินยอดขายรวมของช่องทางนั้นในวันนั้นๆ
+        const finalGovSales = Math.min(rev, govSales)
+
+        // ยอดขายปกติที่ต้องคิดเรต GP แพลตฟอร์ม (33.7% หรือ 32.1%)
+        const normalSales = Math.max(0, rev - finalGovSales)
+
+        // เรต GP แยกขาชัดเจน
+        const normalGpRate = gpRates[k] || 0
+        const govGpRate = gpRates.govSubsidy || 0
+
+        // คำนวณแยกก้อนตาม Fact ของแต่ละวัน
+        const gpOnNormal = Math.round(normalSales * (normalGpRate / 100))
+        const gpOnGov    = Math.round(finalGovSales * (govGpRate / 100))
+
+        // รวมยอด Est.GP และ Est.Net
+        const simulatedGpAmount = gpOnNormal + gpOnGov
+        const simulatedNet = rev - ads - simulatedGpAmount
+
         return {
           key: k,
           rev,
           ads,
           gp,
           net: rev - ads - gp,
+          simulatedGpAmount, 
+          simulatedNet, 
           cnt: s.platformCnt?.[k] || 0,
           transfer: s.platformTransfer?.[k] || 0,
           subsidy: s.platformSubsidy?.[k] || 0,
           cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
         }
       })
-  }, [s, adsByPlatform, gpByPlatform])
+  }, [s, adsByPlatform, gpByPlatform, gpRates])
 
-  // POS payment split (ยังคงไว้ใช้ใน posPaymentSummary เดิม)
-  const posPaymentSummary = useMemo(() => {
-    let cash = 0
-    let transfer = 0
-    orders.forEach(o => {
-      const channel = (o.channel || '').toLowerCase()
-      if (channel !== 'pos') return
-      const amount = Number(o.actualAmount || o.actual_amount || 0)
-      if (o.payment === 'cash') { cash += amount } else { transfer += amount }
-    })
-    return { cash, transfer }
-  }, [orders])
-
-  // daily history
   const dailyRows = Object.entries(s.dailyMap)
     .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14)
-
-  // modifier
-  const modCount = {}
-  orders.forEach(r => {
-    getOrderItems(r).forEach(item => {
-      const mod = item.selectedModifier?.name || item.modifier_name || null
-      if (mod) modCount[mod] = (modCount[mod] || 0) + (Number(item.qty) || 1)
-    })
-  })
-  const topMods = Object.entries(modCount).sort((a, b) => b[1] - a[1]).slice(0, 8)
 
   const closedSet = new Set(filteredClosedDays.map(d => d.date))
 
@@ -187,7 +191,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         onFromChange={setFrom} onToChange={setTo}
       />
 
-      {/* Stats หลัก */}
       <div style={S.grid4}>
         <StatCard icon="💰" label="ยอดรับจริง" value={`฿${fmt(total)}`} color="var(--primary)" />
         <StatCard icon="🧾" label="ออเดอร์" value={fmt(orders.length)} unit="บิล" />
@@ -197,7 +200,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         <StatCard icon="📈" label="เฉลี่ย/วันเปิด" value={dailyAvg ? `฿${fmt(dailyAvg)}` : '—'} color="var(--primary)" />
       </div>
 
-      {/* Operating days summary */}
       {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
           <div style={S.miniCard}>
@@ -223,9 +225,45 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         </div>
       )}
 
-      {/* Platform */}
+      {/* Platform Section */}
       <div style={S.section}>
-        <div style={S.secTitle}>📡 Platform</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={S.secTitleNoMargin}>📡 Platform</div>
+          <button 
+            onClick={() => setShowGpConfig(!showGpConfig)} 
+            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+          >
+            {showGpConfig ? '✖ ปิดตั้งค่า' : '⚙️ ตั้งค่า GP จำลอง'}
+          </button>
+        </div>
+
+        {showGpConfig && (
+          <div style={{ background: '#121212', borderRadius: 8, padding: 10, marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, border: '1px solid #222' }}>
+            {['grab', 'lineman', 'shopee'].map(k => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase' }}>{k} GP %:</span>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  value={gpRates[k]} 
+                  onChange={(e) => handleRateChange(k, e.target.value)}
+                  style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#fff', fontSize: 11, textAlign: 'center', padding: '2px 0' }}
+                />
+              </div>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gridColumn: 'span 2', borderTop: '1px solid #222', paddingTop: 6, marginTop: 2 }}>
+              <span style={{ fontSize: 11, color: '#FF9F0A' }}>ไทยช่วยไทยพลัส GP %:</span>
+              <input 
+                type="number" 
+                step="0.01"
+                value={gpRates.govSubsidy} 
+                onChange={(e) => handleRateChange('govSubsidy', e.target.value)}
+                style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#FF9F0A', fontSize: 11, textAlign: 'center', padding: '2px 0', fontWeight: 'bold' }}
+              />
+            </div>
+          </div>
+        )}
+
         {platforms.map(p => {
           const color = CH_COLOR[p.key] || '#888'
           const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
@@ -233,13 +271,11 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           return (
             <div key={p.key} style={S.platformRow}>
               
-              {/* ซ้าย: ชื่อช่องทาง และจำนวนบิล */}
               <div style={{ width: 68, color, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
                 <div>{p.key.toUpperCase()}</div>
                 <div style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 400 }}>{p.cnt} บิล</div>
               </div>
 
-              {/* กลาง: Progress Bar และประเภทเงิน (อันที่เป็น 0 ไม่โชว์) */}
               <div style={{ flex: 1 }}>
                 <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.5s' }} />
@@ -251,19 +287,35 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
                 </div>
               </div>
 
-              {/* ขวา: ยอดขาย และรายละเอียดหักลบยอดสุทธิ (Net) เหมือน TrendTab */}
-              <div style={{ textAlign: 'right', minWidth: 95 }}>
+              <div style={{ textAlign: 'right', minWidth: 115 }}>
                 <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 14, color }}>
                   ฿{fmt(p.rev)}
                 </div>
                 
-                {/* แอดหรือจีพีเป็น 0 ไม่โชว์ */}
-                {p.ads > 0 && <div style={{ fontSize: 10, color: '#FF453A' }}>Ads -{fmt(p.ads)}</div>}
-                {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP -{fmt(p.gp)}</div>}
+                {/* 1. Ads จริง */}
+                {p.ads > 0 && <div style={{ fontSize: 10, color: '#FF453A' }}>Ads จริง -{fmt(p.ads)}</div>}
+
+                {/* 2. GP จริง */}
+                {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP จริง -{fmt(p.gp)}</div>}
                 
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#FFFFFF', marginTop: 1 }}>
-                  Net {fmt(p.net)}
+                {/* 3. Gp est */}
+                {p.key !== 'pos' && (
+                  <div style={{ fontSize: 9, color: 'var(--dim)', fontStyle: 'italic' }}>
+                    Est.GP -{fmt(p.simulatedGpAmount)}
+                  </div>
+                )}
+                
+                {/* 4. Est.Net / Net (สำหรับ POS) */}
+                <div style={{ fontSize: 11, fontWeight: 800, color: p.key !== 'pos' ? 'var(--primary)' : '#FFFFFF', marginTop: 2 }}>
+                  {p.key !== 'pos' ? `Est.Net ${fmt(p.simulatedNet)}` : `Net ${fmt(p.net)}`}
                 </div>
+
+                {/* 5. Net จริง */}
+                {p.key !== 'pos' && p.gp > 0 && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#66BB6A', marginTop: 1 }}>
+                    Net จริง {fmt(p.net)}
+                  </div>
+                )}
               </div>
 
             </div>
@@ -272,7 +324,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {platforms.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Top menu chart */}
+      {/* ส่วนอื่นๆ คงเดิม */}
       <div style={S.section}>
         <div style={S.secTitle}>🏆 เมนูขายดี Top 10</div>
         {topMenu.length > 0 ? (
@@ -293,21 +345,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         ) : <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Modifier */}
-      {topMods.length > 0 && (
-        <div style={S.section}>
-          <div style={S.secTitle}>⚙️ Add-on / Modifier ยอดนิยม</div>
-          {topMods.map(([mod, cnt], i) => (
-            <div key={mod} style={S.platformRow}>
-              <div style={{ width: 20, color: i < 3 ? 'var(--primary)' : 'var(--dim)', fontWeight: 800, fontSize: 12 }}>{i + 1}</div>
-              <div style={{ flex: 1, fontSize: 13 }}>{mod}</div>
-              <div style={{ color: '#4D96FF', fontWeight: 700, fontSize: 13 }}>{fmt(cnt)} ครั้ง</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Categories */}
       <div style={S.section}>
         <div style={S.secTitle}>📂 แยกหมวดหมู่</div>
         {Object.entries(s.catRev).sort((a, b) => b[1] - a[1]).map(([cat, rev]) => {
@@ -328,7 +365,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {Object.keys(s.catRev).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* All items */}
       <div style={S.section}>
         <div style={S.secTitle}>🧾 รายการที่ขายได้</div>
         {Object.entries(menuT).sort((a, b) => b[1].qty - a[1].qty).map(([name, d]) => {
@@ -346,7 +382,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {Object.keys(menuT).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Daily history */}
       <div style={S.section}>
         <div style={S.secTitle}>📅 ประวัติรายวัน</div>
         {dailyRows.map(([d, v]) => {
@@ -380,6 +415,8 @@ const S = {
   miniCard:    { background: 'var(--surface)', borderRadius: 14, padding: '12px 10px', border: '1px solid var(--border)', textAlign: 'center' },
   section:     { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   secTitle:    { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  secTitleNoMargin: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
-}
+                         }
+    
