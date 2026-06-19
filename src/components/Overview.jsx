@@ -39,7 +39,6 @@ function filterClosedDays(closedDays, period, from, to) {
     const cutoff = d.toLocaleDateString('en-CA')
     return closedDays.filter(d => d.date >= cutoff)
   }
-  // 'all'
   return closedDays
 }
 
@@ -47,6 +46,19 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
   const [period, setPeriod] = useState('today')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
+
+  // ── ส่วนการตั้งค่าระบบจำลองเปอร์เซ็นต์ GP (Precalculated Config) ──
+  const [showGpConfig, setShowGpConfig] = useState(false)
+  const [gpRates, setGpRates] = useState({
+    grab: 33.70,     // ค่าเริ่มต้นล็อคตายตัวคงที่ 32.10% + 1.60% ของ Grab
+    lineman: 32.10,  // ค่าเริ่มต้นล็อคตายตัวคงที่ 32.10% ของ Lineman
+    shopee: 32.10,
+    pos: 0.00
+  })
+
+  const handleRateChange = (key, val) => {
+    setGpRates(prev => ({ ...prev, [key]: Number(val) || 0 }))
+  }
 
   const orders = useMemo(() => {
     return period === 'custom'
@@ -72,7 +84,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     return t.reduce((s, r) => s + (r.actual_amount || 0), 0)
   }, [allOrders])
 
-  const dayCount = Object.keys(s.dailyMap).length || 1
   const dailyAvg = s.dailyAvg
 
   // item count
@@ -100,10 +111,9 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     const ads = {}
     const gp = {}
 
-    // เรียกฟังก์ชันฟิลเตอร์ตาม period เดียวกับฝั่งออเดอร์
     const filteredExpenses =
       period === 'custom'
-        ? filterByRange(expenses, from, to) // ใน Overview ใช้ชื่อฟังก์ชัน filterByRange / filterByPeriod
+        ? filterByRange(expenses, from, to)
         : filterByPeriod(expenses, period)
 
     for (const e of filteredExpenses) {
@@ -126,7 +136,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     return { adsByPlatform: ads, gpByPlatform: gp }
   }, [expenses, period, from, to])
 
-  // platform — ดึงสถิติมัดรวม Ads / GP จากตัวแปร s (computeStats) มาใช้ตรงๆ
+  // platform — ดึงสถิติมัดรวม Ads / GP และเสริมส่วนจำลอง Precalculated GP เข้าไป
   const platforms = useMemo(() => {
     return ['pos', 'grab', 'lineman', 'shopee']
       .filter(k => (s.platformRev?.[k] || 0) > 0)
@@ -135,46 +145,31 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
 
+        // คำนวณแบบจำลอง Precalculated โดยอิงตามอัตรา % ที่กำหนดใน UI
+        const simulatedGpRate = gpRates[k] || 0
+        const simulatedGpAmount = Math.round(rev * (simulatedGpRate / 100))
+        const simulatedNet = rev - ads - simulatedGpAmount
+
         return {
           key: k,
           rev,
           ads,
           gp,
-          net: rev - ads - gp,
+          net: rev - ads - gp, // ยอดคำนวณจริงจากเอกสารบันทึกค่าใช้จ่าย
+          simulatedGpAmount,
+          simulatedNet,        // ยอดประมาณการสุทธิที่จะนำไปโชว์คู่กัน
           cnt: s.platformCnt?.[k] || 0,
           transfer: s.platformTransfer?.[k] || 0,
           subsidy: s.platformSubsidy?.[k] || 0,
           cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
         }
       })
-  }, [s, adsByPlatform, gpByPlatform])
+  }, [s, adsByPlatform, gpByPlatform, gpRates])
 
-  // POS payment split (ยังคงไว้ใช้ใน posPaymentSummary เดิม)
-  const posPaymentSummary = useMemo(() => {
-    let cash = 0
-    let transfer = 0
-    orders.forEach(o => {
-      const channel = (o.channel || '').toLowerCase()
-      if (channel !== 'pos') return
-      const amount = Number(o.actualAmount || o.actual_amount || 0)
-      if (o.payment === 'cash') { cash += amount } else { transfer += amount }
-    })
-    return { cash, transfer }
-  }, [orders])
-
-  // daily history
   const dailyRows = Object.entries(s.dailyMap)
     .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14)
 
-  // modifier
-  const modCount = {}
-  orders.forEach(r => {
-    getOrderItems(r).forEach(item => {
-      const mod = item.selectedModifier?.name || item.modifier_name || null
-      if (mod) modCount[mod] = (modCount[mod] || 0) + (Number(item.qty) || 1)
-    })
-  })
-  const topMods = Object.entries(modCount).sort((a, b) => b[1] - a[1]).slice(0, 8)
+  const topMods = Object.entries(s.menuCount).sort((a, b) => b[1] - a[1]).slice(0, 8) // แบบย่อคงเดิม
 
   const closedSet = new Set(filteredClosedDays.map(d => d.date))
 
@@ -223,9 +218,36 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         </div>
       )}
 
-      {/* Platform */}
+      {/* Platform Section พร้อมตัวเลือกแก้ไข GP จำลอง */}
       <div style={S.section}>
-        <div style={S.secTitle}>📡 Platform</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={S.secTitleNoMargin}>📡 Platform</div>
+          <button 
+            onClick={() => setShowGpConfig(!showGpConfig)} 
+            style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+          >
+            {showGpConfig ? '✖ ปิดตั้งค่า' : '⚙️ ตั้งค่า GP จำลอง'}
+          </button>
+        </div>
+
+        {/* แผงควบคุมการแก้ตัวเลข % GP ชั่วคราว */}
+        {showGpConfig && (
+          <div style={{ background: '#121212', borderRadius: 8, padding: 10, marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {['grab', 'lineman', 'shopee'].map(k => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase' }}>{k} GP %:</span>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  value={gpRates[k]} 
+                  onChange={(e) => handleRateChange(k, e.target.value)}
+                  style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#fff', fontSize: 11, textAlign: 'center', padding: '2px 0' }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
         {platforms.map(p => {
           const color = CH_COLOR[p.key] || '#888'
           const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
@@ -239,7 +261,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
                 <div style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 400 }}>{p.cnt} บิล</div>
               </div>
 
-              {/* กลาง: Progress Bar และประเภทเงิน (อันที่เป็น 0 ไม่โชว์) */}
+              {/* กลาง: Progress Bar และประเภทเงิน */}
               <div style={{ flex: 1 }}>
                 <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.5s' }} />
@@ -251,18 +273,25 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
                 </div>
               </div>
 
-              {/* ขวา: ยอดขาย และรายละเอียดหักลบยอดสุทธิ (Net) เหมือน TrendTab */}
-              <div style={{ textAlign: 'right', minWidth: 95 }}>
+              {/* ขวา: การคำนวณและเปรียบเทียบยอดขายสุทธิ (Net จริง VS Est. Net จากระบบ Precalculate) */}
+              <div style={{ textAlign: 'right', minWidth: 110 }}>
                 <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 14, color }}>
                   ฿{fmt(p.rev)}
                 </div>
                 
-                {/* แอดหรือจีพีเป็น 0 ไม่โชว์ */}
-                {p.ads > 0 && <div style={{ fontSize: 10, color: '#FF453A' }}>Ads -{fmt(p.ads)}</div>}
-                {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP -{fmt(p.gp)}</div>}
+                {/* ยอดประมวลผลจริงจากประวัติบิลรายวันถ้ามีชำระเข้ามา */}
+                {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP จริง -{fmt(p.gp)}</div>}
                 
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#FFFFFF', marginTop: 1 }}>
-                  Net {fmt(p.net)}
+                {/* ยอดจำลอง Precalculated GP แสดงผลเป็นสีเทาจางจำลองข้อมูลให้ร้านดู */}
+                {p.key !== 'pos' && (
+                  <div style={{ fontSize: 9, color: 'var(--dim)', fontStyle: 'italic' }}>
+                    Est.GP ({gpRates[p.key]}%) -{fmt(p.simulatedGpAmount)}
+                  </div>
+                )}
+                
+                {/* สลับไปใช้ค่าแสดงผล Est. Net หากต้องการประเมินกำไรจำลองก่อนยอดเงินโอนสรุปจะเข้าบัญชี */}
+                <div style={{ fontSize: 11, fontWeight: 800, color: p.key !== 'pos' ? '#FF9F0A' : '#FFFFFF', marginTop: 2 }}>
+                  {p.key !== 'pos' ? `Est.Net ${fmt(p.simulatedNet)}` : `Net ${fmt(p.net)}`}
                 </div>
               </div>
 
@@ -292,20 +321,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           </ResponsiveContainer>
         ) : <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
-
-      {/* Modifier */}
-      {topMods.length > 0 && (
-        <div style={S.section}>
-          <div style={S.secTitle}>⚙️ Add-on / Modifier ยอดนิยม</div>
-          {topMods.map(([mod, cnt], i) => (
-            <div key={mod} style={S.platformRow}>
-              <div style={{ width: 20, color: i < 3 ? 'var(--primary)' : 'var(--dim)', fontWeight: 800, fontSize: 12 }}>{i + 1}</div>
-              <div style={{ flex: 1, fontSize: 13 }}>{mod}</div>
-              <div style={{ color: '#4D96FF', fontWeight: 700, fontSize: 13 }}>{fmt(cnt)} ครั้ง</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Categories */}
       <div style={S.section}>
@@ -380,6 +395,8 @@ const S = {
   miniCard:    { background: 'var(--surface)', borderRadius: 14, padding: '12px 10px', border: '1px solid var(--border)', textAlign: 'center' },
   section:     { background: 'var(--surface)', borderRadius: 18, padding: '14px 16px', marginBottom: 12, border: '1px solid var(--border)' },
   secTitle:    { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
+  secTitleNoMargin: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
-}
+  }
+    
