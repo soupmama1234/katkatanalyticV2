@@ -140,24 +140,16 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
 
-        // FACT: ยอดโครงการรัฐบาลคือ Subsidy (🏛️) เท่านั้น ห้ามเอา Transfer (📱) มารวม
         const govSales = k === 'pos' ? 0 : (s.platformSubsidy?.[k] || 0)
-
-        // ป้องกันบั๊กข้ามวัน: ยอดโครงการรัฐต้องไม่เกินยอดขายรวมของช่องทางนั้นในวันนั้นๆ
         const finalGovSales = Math.min(rev, govSales)
-
-        // ยอดขายปกติที่ต้องคิดเรต GP แพลตฟอร์ม (33.7% หรือ 32.1%)
         const normalSales = Math.max(0, rev - finalGovSales)
 
-        // เรต GP แยกขาชัดเจน
         const normalGpRate = gpRates[k] || 0
         const govGpRate = gpRates.govSubsidy || 0
 
-        // คำนวณแยกก้อนตาม Fact ของแต่ละวัน
         const gpOnNormal = Math.round(normalSales * (normalGpRate / 100))
         const gpOnGov    = Math.round(finalGovSales * (govGpRate / 100))
 
-        // รวมยอด Est.GP และ Est.Net
         const simulatedGpAmount = gpOnNormal + gpOnGov
         const simulatedNet = rev - ads - simulatedGpAmount
 
@@ -167,7 +159,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           ads,
           gp,
           net: rev - ads - gp,
-          simulatedGpAmount, 
+          simulatedGpAmount,
           simulatedNet, 
           cnt: s.platformCnt?.[k] || 0,
           transfer: s.platformTransfer?.[k] || 0,
@@ -238,28 +230,39 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         </div>
 
         {showGpConfig && (
-          <div style={{ background: '#121212', borderRadius: 8, padding: 10, marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, border: '1px solid #222' }}>
-            {['grab', 'lineman', 'shopee'].map(k => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase' }}>{k} GP %:</span>
+          <div style={{ background: '#121212', borderRadius: 8, padding: 10, marginBottom: 12, border: '1px solid #222' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {['grab', 'lineman', 'shopee'].map(k => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase' }}>{k} GP %:</span>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    value={gpRates[k]} 
+                    onChange={(e) => handleRateChange(k, e.target.value)}
+                    style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#fff', fontSize: 11, textAlign: 'center', padding: '2px 0' }}
+                  />
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gridColumn: 'span 2', borderTop: '1px solid #222', paddingTop: 6, marginTop: 2 }}>
+                <span style={{ fontSize: 11, color: '#FF9F0A' }}>ไทยช่วยไทยพลัส GP %:</span>
                 <input 
                   type="number" 
                   step="0.01"
-                  value={gpRates[k]} 
-                  onChange={(e) => handleRateChange(k, e.target.value)}
-                  style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#fff', fontSize: 11, textAlign: 'center', padding: '2px 0' }}
+                  value={gpRates.govSubsidy} 
+                  onChange={(e) => handleRateChange('govSubsidy', e.target.value)}
+                  style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#FF9F0A', fontSize: 11, textAlign: 'center', padding: '2px 0', fontWeight: 'bold' }}
                 />
               </div>
-            ))}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gridColumn: 'span 2', borderTop: '1px solid #222', paddingTop: 6, marginTop: 2 }}>
-              <span style={{ fontSize: 11, color: '#FF9F0A' }}>ไทยช่วยไทยพลัส GP %:</span>
-              <input 
-                type="number" 
-                step="0.01"
-                value={gpRates.govSubsidy} 
-                onChange={(e) => handleRateChange('govSubsidy', e.target.value)}
-                style={{ width: 55, background: '#1a1a1a', border: '1px solid #333', borderRadius: 4, color: '#FF9F0A', fontSize: 11, textAlign: 'center', padding: '2px 0', fontWeight: 'bold' }}
-              />
+            </div>
+
+            {/* หมายเหตุสูตรคำนวณ */}
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #333', fontSize: 10, color: 'var(--dim)', lineHeight: '1.4' }}>
+              <div style={{ fontWeight: 700, color: '#fff', marginBottom: 3 }}>💡 หมายเหตุสูตรคำนวณ (Simulate Formula)</div>
+              <div>• <b>Est.GP (มีโครงการรัฐ):</b> (ยอดรัฐ 🏛️ × เรตรัฐ %) + ((ยอดขายรวม - ยอดรัฐ) × เรตแอป %)</div>
+              <div>• <b>Est.GP (ทั่วไป):</b> ยอดขายรวม × เรตแอป %</div>
+              <div>• <b>Est.Net:</b> ยอดขายรวม — Ads จริง — Est.GP</div>
+              <div style={{ color: '#66BB6A', marginTop: 2 }}>• <b>Net จริง:</b> ยอดขายรวม — Ads จริง — GP จริง (คำนวณจากต้นทุนที่บันทึกเข้าระบบ)</div>
             </div>
           </div>
         )}
@@ -292,25 +295,19 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
                   ฿{fmt(p.rev)}
                 </div>
                 
-                {/* 1. Ads จริง */}
                 {p.ads > 0 && <div style={{ fontSize: 10, color: '#FF453A' }}>Ads จริง -{fmt(p.ads)}</div>}
-
-                {/* 2. GP จริง */}
                 {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP จริง -{fmt(p.gp)}</div>}
                 
-                {/* 3. Gp est */}
                 {p.key !== 'pos' && (
                   <div style={{ fontSize: 9, color: 'var(--dim)', fontStyle: 'italic' }}>
                     Est.GP -{fmt(p.simulatedGpAmount)}
                   </div>
                 )}
                 
-                {/* 4. Est.Net / Net (สำหรับ POS) */}
                 <div style={{ fontSize: 11, fontWeight: 800, color: p.key !== 'pos' ? 'var(--primary)' : '#FFFFFF', marginTop: 2 }}>
                   {p.key !== 'pos' ? `Est.Net ${fmt(p.simulatedNet)}` : `Net ${fmt(p.net)}`}
                 </div>
 
-                {/* 5. Net จริง */}
                 {p.key !== 'pos' && p.gp > 0 && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#66BB6A', marginTop: 1 }}>
                     Net จริง {fmt(p.net)}
@@ -418,5 +415,4 @@ const S = {
   secTitleNoMargin: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
-                         }
-    
+}
