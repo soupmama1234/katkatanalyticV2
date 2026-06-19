@@ -132,7 +132,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     return { adsByPlatform: ads, gpByPlatform: gp }
   }, [expenses, period, from, to])
 
-    const platforms = useMemo(() => {
+  const platforms = useMemo(() => {
     return ['pos', 'grab', 'lineman', 'shopee']
       .filter(k => (s.platformRev?.[k] || 0) > 0)
       .map(k => {
@@ -140,21 +140,21 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
         
-        // ดึงยอดจากโครงการรัฐบาล (ยอดรูปตึก 🏛️)
-        const govSales = s.platformTransfer?.[k] || 0 
+        // ดึงยอดจากโครงการรัฐตรงๆ (จากข้อมูลที่ระบุใน object ยอดโอนเข้าบัญชีรัฐบาล)
+        // ถ้า s.platformTransfer เก็บค่า 907 ยอด govSales จะเท่ากับ 907 บาท
+        const govSales = s.platformTransfer?.[k] || s.platformSubsidy?.[k] || 0 
         
-        // ยอดขายปกติที่ไม่ได้เข้าโครงการ
+        // ยอดปกติ = ยอดรวมทั้งหมด ลบ ยอดรัฐ
         const normalSales = Math.max(0, rev - govSales)
         
-        // อัตรา GP ของแต่ละฝั่ง
         const normalGpRate = gpRates[k] || 0
         const govGpRate = gpRates.govSubsidy || 0
 
-        // คำนวณแยกก้อนให้ Fact ชัดเจน
+        // คิดแยกทีละส่วนให้เห็นชัดเจน
         const gpOnNormal = Math.round(normalSales * (normalGpRate / 100))
         const gpOnGov    = Math.round(govSales * (govGpRate / 100))
 
-        // รวม Est.GP ที่ถูกต้อง
+        // รวม Est.GP 
         const simulatedGpAmount = gpOnNormal + gpOnGov
         const simulatedNet = rev - ads - simulatedGpAmount
 
@@ -164,7 +164,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           ads,
           gp,
           net: rev - ads - gp,
-          simulatedGpAmount, // ยอดนี้จะตรงตามจริงแล้วครับ
+          simulatedGpAmount, 
           simulatedNet, 
           cnt: s.platformCnt?.[k] || 0,
           transfer: s.platformTransfer?.[k] || 0,
