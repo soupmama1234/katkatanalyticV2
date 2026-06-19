@@ -295,9 +295,17 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
                   </div>
                 )}
                 
+                {/* 4. Est.Net / Net (สำหรับ POS) */}
                 <div style={{ fontSize: 11, fontWeight: 800, color: p.key !== 'pos' ? 'var(--primary)' : '#FFFFFF', marginTop: 2 }}>
                   {p.key !== 'pos' ? `Est.Net ${fmt(p.simulatedNet)}` : `Net ${fmt(p.net)}`}
                 </div>
+
+                {/* 5. Net จริง */}
+                {p.key !== 'pos' && p.gp > 0 && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#66BB6A', marginTop: 1 }}>
+                    Net จริง {fmt(p.net)}
+                  </div>
+                )}
               </div>
 
             </div>
@@ -306,7 +314,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {platforms.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Categories & Items & History */}
+      {/* ส่วนอื่นๆ คงเดิม */}
       <div style={S.section}>
         <div style={S.secTitle}>🏆 เมนูขายดี Top 10</div>
         {topMenu.length > 0 ? (
@@ -400,5 +408,5 @@ const S = {
   secTitleNoMargin: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
-                                                    }
-        
+                         }
+    
