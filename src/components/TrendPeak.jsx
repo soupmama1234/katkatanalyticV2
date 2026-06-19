@@ -342,72 +342,81 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         <div style={S.cardTitle}>📡 Platform</div>
 
         {platforms.map(p => {
-          const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
+  const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
 
-          const color =
-            p.key === 'grab' ? '#00B14F' :
-            p.key === 'lineman' ? '#00A84F' :
-            p.key === 'shopee' ? '#EE4D2D' :
-            'var(--primary)'
+  const color =
+    p.key === 'grab' ? '#00B14F' :
+    p.key === 'lineman' ? '#00A84F' :
+    p.key === 'shopee' ? '#EE4D2D' :
+    'var(--primary)'
 
-          return (
-            <div key={p.key} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '10px 0',
-              borderBottom: '1px solid var(--border2)'
-            }}>
+  return (
+    <div key={p.key} style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: '10px 0',
+      borderBottom: '1px solid var(--border2)'
+    }}>
 
-              {/* LEFT */}
-              <div style={{ width: 70 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color }}>
-                  {p.key.toUpperCase()}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-                  {p.cnt} บิล
-                </div>
-              </div>
+      {/* LEFT */}
+      <div style={{ width: 70 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color }}>
+          {p.key.toUpperCase()}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--dim)' }}>
+          {p.cnt} บิล
+        </div>
+      </div>
 
-              {/* MID BAR */}
-              <div style={{ flex: 1 }}>
-                <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
-                  <div
-                    style={{
-                      width: `${pct}%`,
-                      height: '100%',
-                      background: color,
-                      borderRadius: 3
-                    }}
-                  />
-                </div>
+      {/* MID BAR */}
+      <div style={{ flex: 1 }}>
+        <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
+          <div
+            style={{
+              width: `${pct}%`,
+              height: '100%',
+              background: color,
+              borderRadius: 3
+            }}
+          />
+        </div>
 
-                <div style={{ fontSize: 10, marginTop: 5, color: 'var(--dim)' }}>
-                  💵 {fmt(p.cash)} 📱 {fmt(p.transfer)} 🏛️ {fmt(p.subsidy)}
-                </div>
-              </div>
+        {/* ซ่อนไอคอนและตัวเลขพลาตฟอร์มที่ยอดเป็น 0 */}
+        <div style={{ fontSize: 10, marginTop: 5, color: 'var(--dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {p.cash > 0 && <span>💵 {fmt(p.cash)}</span>}
+          {p.transfer > 0 && <span>📱 {fmt(p.transfer)}</span>}
+          {p.subsidy > 0 && <span>🏛️ {fmt(p.subsidy)}</span>}
+        </div>
+      </div>
 
-              {/* RIGHT */}
-              <div style={{ textAlign: 'right', minWidth: 90 }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color }}>
-                  ฿{fmt(p.rev)}
-                </div>
+      {/* RIGHT */}
+      <div style={{ textAlign: 'right', minWidth: 90 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color }}>
+          ฿{fmt(p.rev)}
+        </div>
 
-                <div style={{ fontSize: 10, color: '#FF453A' }}>
-                  Ads -{fmt(p.ads)}
-                </div>
+        {/* ซ่อน Ads และ GP ถ้าค่าเป็น 0 */}
+        {p.ads > 0 && (
+          <div style={{ fontSize: 10, color: '#FF453A' }}>
+            Ads -{fmt(p.ads)}
+          </div>
+        )}
 
-                <div style={{ fontSize: 10, color: '#FF9F0A' }}>
-                  GP -{fmt(p.gp)}
-                </div>
+        {p.gp > 0 && (
+          <div style={{ fontSize: 10, color: '#FF9F0A' }}>
+            GP -{fmt(p.gp)}
+          </div>
+        )}
 
-                <div style={{ fontSize: 12, fontWeight: 800 }}>
-                  Net {fmt(p.net)}
-                </div>
-              </div>
-            </div>
-          )
-        })}
+        <div style={{ fontSize: 12, fontWeight: 800 }}>
+          Net {fmt(p.net)}
+        </div>
+      </div>
+    </div>
+  )
+})}
+        
       </div>
 
       {/* 💸 ต้นทุน vs รายรับ */}
