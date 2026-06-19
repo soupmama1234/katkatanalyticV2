@@ -139,22 +139,26 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const rev = s.platformRev?.[k] || 0
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
-        
-        // ดึงยอดจากโครงการรัฐตรงๆ (จากข้อมูลที่ระบุใน object ยอดโอนเข้าบัญชีรัฐบาล)
-        // ถ้า s.platformTransfer เก็บค่า 907 ยอด govSales จะเท่ากับ 907 บาท
-        const govSales = s.platformTransfer?.[k] || s.platformSubsidy?.[k] || 0 
-        
-        // ยอดปกติ = ยอดรวมทั้งหมด ลบ ยอดรัฐ
-        const normalSales = Math.max(0, rev - govSales)
-        
+
+        // 1. ดึงยอดโครงการรัฐ (🏛️) แยกตามแต่ละช่องทาง k ให้ชัดเจนในวันนั้นๆ
+        // โดยตรวจสอบทั้งจาก subsidy และ transfer เผื่อระบบบันทึกต่างกัน
+        const govSales = k === 'pos' ? 0 : (s.platformTransfer?.[k] || s.platformSubsidy?.[k] || 0)
+
+        // 2. ป้องกันบั๊กข้ามวัน: ถ้ายอดโครงการรัฐโผล่มาเกินยอดขายรวมในวันนั้น ให้ปัดลงเท่ากับยอดขายรวม
+        const finalGovSales = Math.min(rev, govSales)
+
+        // 3. ยอดขายปกติที่ต้องคิดเรตแพลตฟอร์ม (เช่น 33.7% หรือ 32.1%)
+        const normalSales = Math.max(0, rev - finalGovSales)
+
+        // 4. ดึงเรต GP จาก State
         const normalGpRate = gpRates[k] || 0
         const govGpRate = gpRates.govSubsidy || 0
 
-        // คิดแยกทีละส่วนให้เห็นชัดเจน
+        // 5. คำนวณแยกส่วนขาดจากกันชัดเจน
         const gpOnNormal = Math.round(normalSales * (normalGpRate / 100))
-        const gpOnGov    = Math.round(govSales * (govGpRate / 100))
+        const gpOnGov    = Math.round(finalGovSales * (govGpRate / 100))
 
-        // รวม Est.GP 
+        // 6. รวมผลลัพธ์ Est.GP และ Est.Net
         const simulatedGpAmount = gpOnNormal + gpOnGov
         const simulatedNet = rev - ads - simulatedGpAmount
 
@@ -164,8 +168,8 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           ads,
           gp,
           net: rev - ads - gp,
-          simulatedGpAmount, 
-          simulatedNet, 
+          simulatedGpAmount, // ค่า Est.GP ที่ถูกต้องตามป๊อปอัพวันที่จริง
+          simulatedNet,      // ค่า Est.Net
           cnt: s.platformCnt?.[k] || 0,
           transfer: s.platformTransfer?.[k] || 0,
           subsidy: s.platformSubsidy?.[k] || 0,
