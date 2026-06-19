@@ -43,7 +43,7 @@ function filterClosedDays(closedDays, period, from, to) {
   return closedDays
 }
 
-export default function Overview({ allOrders, closedDays = [] }) {
+export default function Overview({ allOrders, closedDays = [], expenses = [] }) {
   const [period, setPeriod] = useState('today')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
@@ -95,17 +95,59 @@ export default function Overview({ allOrders, closedDays = [] }) {
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + '…' : name, qty, rev: s.menuRev[name] || 0 }))
 
-  // platform — เพิ่ม transfer/subsidy/cash
-  const platforms = ['pos', 'grab', 'lineman', 'shopee']
-    .filter(k => s.platformRev[k] > 0)
-    .map(k => ({
-      key: k,
-      rev: s.platformRev[k],
-      cnt: s.platformCnt[k],
-      transfer: s.platformTransfer?.[k] || 0,
-      subsidy: s.platformSubsidy?.[k] || 0,
-      cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
-    }))
+  // ── คำนวณยอด Ads และ GP แยกตาม Platform จากก้อน expenses ──────────────────
+  const { adsByPlatform, gpByPlatform } = useMemo(() => {
+    const ads = {}
+    const gp = {}
+
+    // เรียกฟังก์ชันฟิลเตอร์ตาม period เดียวกับฝั่งออเดอร์
+    const filteredExpenses =
+      period === 'custom'
+        ? filterByRange(expenses, from, to) // ใน Overview ใช้ชื่อฟังก์ชัน filterByRange / filterByPeriod
+        : filterByPeriod(expenses, period)
+
+    for (const e of filteredExpenses) {
+      const cat = (e.category || '').toLowerCase().trim()
+      let platform = (e.platform || 'pos').toLowerCase().trim()
+
+      if (platform.includes('grab')) platform = 'grab'
+      else if (platform.includes('line')) platform = 'lineman'
+      else if (platform.includes('shopee')) platform = 'shopee'
+      else platform = 'pos'
+
+      if (cat.includes('ads')) {
+        ads[platform] = (ads[platform] || 0) + (e.amount || 0)
+      }
+      if (cat.includes('gp')) {
+        gp[platform] = (gp[platform] || 0) + (e.amount || 0)
+      }
+    }
+
+    return { adsByPlatform: ads, gpByPlatform: gp }
+  }, [expenses, period, from, to])
+
+  // platform — ดึงสถิติมัดรวม Ads / GP จากตัวแปร s (computeStats) มาใช้ตรงๆ
+  const platforms = useMemo(() => {
+    return ['pos', 'grab', 'lineman', 'shopee']
+      .filter(k => (s.platformRev?.[k] || 0) > 0)
+      .map(k => {
+        const rev = s.platformRev?.[k] || 0
+        const ads = adsByPlatform[k] || 0
+        const gp  = gpByPlatform[k] || 0
+
+        return {
+          key: k,
+          rev,
+          ads,
+          gp,
+          net: rev - ads - gp,
+          cnt: s.platformCnt?.[k] || 0,
+          transfer: s.platformTransfer?.[k] || 0,
+          subsidy: s.platformSubsidy?.[k] || 0,
+          cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
+        }
+      })
+  }, [s, adsByPlatform, gpByPlatform])
 
   // POS payment split (ยังคงไว้ใช้ใน posPaymentSummary เดิม)
   const posPaymentSummary = useMemo(() => {
@@ -187,26 +229,43 @@ export default function Overview({ allOrders, closedDays = [] }) {
         {platforms.map(p => {
           const color = CH_COLOR[p.key] || '#888'
           const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
-          const avgBill = p.cnt > 0 ? Math.round(p.rev / p.cnt) : 0
+          
           return (
             <div key={p.key} style={S.platformRow}>
-              <div style={{ width: 64, color, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-                {p.key.toUpperCase()}
+              
+              {/* ซ้าย: ชื่อช่องทาง และจำนวนบิล */}
+              <div style={{ width: 68, color, fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+                <div>{p.key.toUpperCase()}</div>
+                <div style={{ fontSize: 10, color: 'var(--dim)', fontWeight: 400 }}>{p.cnt} บิล</div>
               </div>
+
+              {/* กลาง: Progress Bar และประเภทเงิน (อันที่เป็น 0 ไม่โชว์) */}
               <div style={{ flex: 1 }}>
-                <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+                <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.5s' }} />
                 </div>
-                <div style={{ marginTop: 6, fontSize: 10, color: 'var(--dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {p.cash > 0 && <span style={{ color: '#4caf50' }}>💵 ฿{fmt(p.cash)}</span>}
-                  {p.transfer > 0 && <span style={{ color: '#2196f3' }}>📱 ฿{fmt(p.transfer)}</span>}
-                  {p.subsidy > 0 && <span style={{ color: '#32D74B' }}>🏛️ ฿{fmt(p.subsidy)}</span>}
+                <div style={{ marginTop: 5, fontSize: 10, color: 'var(--dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {p.cash > 0 && <span>💵 {fmt(p.cash)}</span>}
+                  {p.transfer > 0 && <span>📱 {fmt(p.transfer)}</span>}
+                  {p.subsidy > 0 && <span>🏛️ {fmt(p.subsidy)}</span>}
                 </div>
               </div>
-              <div style={{ textAlign: 'right', minWidth: 90 }}>
-                <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 13, color }}>฿{fmt(p.rev)}</div>
-                <div style={{ fontSize: 10, color: 'var(--dim)' }}>{p.cnt} บิล · ฿{fmt(avgBill)}/บิล</div>
+
+              {/* ขวา: ยอดขาย และรายละเอียดหักลบยอดสุทธิ (Net) เหมือน TrendTab */}
+              <div style={{ textAlign: 'right', minWidth: 95 }}>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 14, color }}>
+                  ฿{fmt(p.rev)}
+                </div>
+                
+                {/* แอดหรือจีพีเป็น 0 ไม่โชว์ */}
+                {p.ads > 0 && <div style={{ fontSize: 10, color: '#FF453A' }}>Ads -{fmt(p.ads)}</div>}
+                {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP -{fmt(p.gp)}</div>}
+                
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#FFFFFF', marginTop: 1 }}>
+                  Net {fmt(p.net)}
+                </div>
               </div>
+
             </div>
           )
         })}

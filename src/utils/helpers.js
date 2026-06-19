@@ -101,6 +101,8 @@ export function periodLabel(p) {
 export function computeStats(orders, closedDays = []) {
   const dailyMap = {}, menuCount = {}, menuRev = {}, catRev = {}, catCnt = {}
   const platformRev = {}, platformCnt = {}, platformTransfer = {}, platformSubsidy = {}
+  const platformAds = {}
+  const platformGP  = {}
   const byHour = Array.from({ length: 24 }, (_, i) => ({ hour: i, orders: 0, revenue: 0 }))
   const byWeekday = Array(7).fill(null).map(() => ({ rev: 0, cnt: 0 }))
   const posPayment = { cash: 0, transfer: 0, card: 0, qr: 0, other: 0 }
@@ -115,6 +117,13 @@ export function computeStats(orders, closedDays = []) {
     const ch = (r.channel || 'pos').toLowerCase()
     platformRev[ch] = (platformRev[ch] || 0) + actual
     platformCnt[ch] = (platformCnt[ch] || 0) + 1
+    // init
+    platformAds[ch] = platformAds[ch] || 0
+    platformGP[ch]  = platformGP[ch] || 0
+
+    // ดึง ads + gp จาก expense (ถ้ามี field map platform)
+    if (r.ads_amount) platformAds[ch] += r.ads_amount
+    if (r.gp_amount)  platformGP[ch]  += r.gp_amount
     if (r.has_subsidy) {
       platformSubsidy[ch] = (platformSubsidy[ch] || 0) + actual
     } else if ((r.payment || '').toLowerCase() !== 'cash') {
@@ -136,6 +145,8 @@ export function computeStats(orders, closedDays = []) {
       const wd = d.getDay(); const idx = wd === 0 ? 6 : wd - 1
       byWeekday[idx].rev += actual; byWeekday[idx].cnt++
     }
+    
+    
 
     getOrderItems(r).forEach(item => {
       const n = item.name || 'ไม่ระบุ'

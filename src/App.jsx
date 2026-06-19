@@ -121,7 +121,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (activeTab) {
-      case 'overview': return <Overview allOrders={allOrders} closedDays={closedDays} />
+      case 'overview': return <Overview allOrders={allOrders} closedDays={closedDays} expenses={expenses} />
       case 'trendpeak': return <TrendPeak allOrders={allOrders} expenses={expenses} />
       case 'expenses':  return <Expenses  expenses={expenses} setExpenses={setExpenses} allOrders={allOrders} actionNotes={actionNotes} setActionNotes={setActionNotes} closedDays={closedDays} setClosedDays={setClosedDays} />
       case 'income':    return <Income    income={income} setIncome={setIncome} />
