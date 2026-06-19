@@ -268,12 +268,12 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
       />
 
       {/* SUMMARY */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-        <StatCard icon="💰" label="ยอดรวม" value={`฿${fmt(total)}`} />
-        <StatCard icon="📊" label="เฉลี่ย/บิล" value={avg ? `฿${fmt(avg)}` : '—'} />
-        <StatCard icon="🧾" label="จำนวนบิล" value={fmt(orders.length)} />
-        <StatCard icon="🔝" label="บิลสูงสุด" value={maxBill ? `฿${fmt(maxBill)}` : '—'} />
-      </div>
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+  <StatCard icon="💰" label="ยอดรวม" value={<span style={{ color: '#FF9F0A' }}>฿{fmt(total)}</span>} />
+  <StatCard icon="📊" label="เฉลี่ย/บิล" value={avg ? <span style={{ color: '#FF9F0A' }}>฿{fmt(avg)}</span> : '—'} />
+  <StatCard icon="🧾" label="จำนวนบิล" value={<span style={{ color: '#FFFFFF' }}>{fmt(orders.length)}</span>} />
+  <StatCard icon="🔝" label="บิลสูงสุด" value={maxBill ? <span style={{ color: '#FFFFFF' }}>฿{fmt(maxBill)}</span> : '—'} />
+</div>
 
       {/* COMPARE */}
       {prevOrders.length > 0 && (
