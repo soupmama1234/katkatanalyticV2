@@ -140,25 +140,24 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
 
-        // 1. ดึงยอดโครงการรัฐ (🏛️) แยกตามแต่ละช่องทาง k ให้ชัดเจนในวันนั้นๆ
-        // โดยตรวจสอบทั้งจาก subsidy และ transfer เผื่อระบบบันทึกต่างกัน
-        const govSales = k === 'pos' ? 0 : (s.platformTransfer?.[k] || s.platformSubsidy?.[k] || 0)
+        // FACT: ยอดโครงการรัฐบาลคือ Subsidy (🏛️) เท่านั้น ห้ามเอา Transfer (📱) มารวม
+        const govSales = k === 'pos' ? 0 : (s.platformSubsidy?.[k] || 0)
 
-        // 2. ป้องกันบั๊กข้ามวัน: ถ้ายอดโครงการรัฐโผล่มาเกินยอดขายรวมในวันนั้น ให้ปัดลงเท่ากับยอดขายรวม
+        // ป้องกันบั๊กข้ามวัน: ยอดโครงการรัฐต้องไม่เกินยอดขายรวมของช่องทางนั้นในวันนั้นๆ
         const finalGovSales = Math.min(rev, govSales)
 
-        // 3. ยอดขายปกติที่ต้องคิดเรตแพลตฟอร์ม (เช่น 33.7% หรือ 32.1%)
+        // ยอดขายปกติที่ต้องคิดเรต GP แพลตฟอร์ม (33.7% หรือ 32.1%)
         const normalSales = Math.max(0, rev - finalGovSales)
 
-        // 4. ดึงเรต GP จาก State
+        // เรต GP แยกขาชัดเจน
         const normalGpRate = gpRates[k] || 0
         const govGpRate = gpRates.govSubsidy || 0
 
-        // 5. คำนวณแยกส่วนขาดจากกันชัดเจน
+        // คำนวณแยกก้อนตาม Fact ของแต่ละวัน
         const gpOnNormal = Math.round(normalSales * (normalGpRate / 100))
         const gpOnGov    = Math.round(finalGovSales * (govGpRate / 100))
 
-        // 6. รวมผลลัพธ์ Est.GP และ Est.Net
+        // รวมยอด Est.GP และ Est.Net
         const simulatedGpAmount = gpOnNormal + gpOnGov
         const simulatedNet = rev - ads - simulatedGpAmount
 
@@ -168,8 +167,8 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           ads,
           gp,
           net: rev - ads - gp,
-          simulatedGpAmount, // ค่า Est.GP ที่ถูกต้องตามป๊อปอัพวันที่จริง
-          simulatedNet,      // ค่า Est.Net
+          simulatedGpAmount, 
+          simulatedNet, 
           cnt: s.platformCnt?.[k] || 0,
           transfer: s.platformTransfer?.[k] || 0,
           subsidy: s.platformSubsidy?.[k] || 0,
