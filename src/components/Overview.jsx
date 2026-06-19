@@ -99,8 +99,8 @@ export default function Overview({ allOrders, closedDays = [] }) {
   const platforms = ['pos', 'grab', 'lineman', 'shopee']
     .filter(k => s.platformRev[k] > 0)
     .map(k => {
-      const ads = s.platformAds?.[k] || 0
-      const gp  = s.platformGp?.[k] || 0
+      const ads = adsByPlatform[k] || 0
+      const gp = gpByPlatform[k] || 0
       const rev = s.platformRev[k] || 0
       
       return {
