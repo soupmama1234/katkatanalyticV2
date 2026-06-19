@@ -95,24 +95,25 @@ export default function Overview({ allOrders, closedDays = [] }) {
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + '…' : name, qty, rev: s.menuRev[name] || 0 }))
 
-  // platform — เพิ่ม transfer/subsidy/cash และคำนวณหาสุทธิ (net)
+  // platform — ดึงสถิติมัดรวม Ads / GP จากตัวแปร s (computeStats) มาใช้ตรงๆ
   const platforms = ['pos', 'grab', 'lineman', 'shopee']
-    .filter(k => s.platformRev[k] > 0)
+    .filter(k => (s.platformRev?.[k] || 0) > 0)
     .map(k => {
-      const ads = adsByPlatform[k] || 0
-      const gp = gpByPlatform[k] || 0
-      const rev = s.platformRev[k] || 0
-      
+      const rev = s.platformRev?.[k] || 0
+      // ดึงจาก object สรุปรวมใน s (ลองเช็คชื่อฟิลด์ของ s อีกทีให้ตรงกับที่คุณใช้)
+      const ads = s.platformAds?.[k] || 0 
+      const gp  = s.platformGp?.[k] || 0
+
       return {
         key: k,
         rev,
-        cnt: s.platformCnt[k],
+        ads,
+        gp,
+        net: rev - ads - gp,
+        cnt: s.platformCnt?.[k] || 0,
         transfer: s.platformTransfer?.[k] || 0,
         subsidy: s.platformSubsidy?.[k] || 0,
         cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
-        ads,
-        gp,
-        net: rev - ads - gp
       }
     })
 
