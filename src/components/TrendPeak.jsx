@@ -696,4 +696,3 @@ const S = {
   row:       { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:     { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
 }
-,
