@@ -43,7 +43,7 @@ function filterClosedDays(closedDays, period, from, to) {
   return closedDays
 }
 
-export default function Overview({ allOrders, closedDays = [] }) {
+export default function Overview({ allOrders, closedDays = [], expenses = [] }) {
   const [period, setPeriod] = useState('today')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
@@ -95,27 +95,59 @@ export default function Overview({ allOrders, closedDays = [] }) {
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + '…' : name, qty, rev: s.menuRev[name] || 0 }))
 
-  // platform — ดึงสถิติมัดรวม Ads / GP จากตัวแปร s (computeStats) มาใช้ตรงๆ
-  const platforms = ['pos', 'grab', 'lineman', 'shopee']
-    .filter(k => (s.platformRev?.[k] || 0) > 0)
-    .map(k => {
-      const rev = s.platformRev?.[k] || 0
-      // ดึงจาก object สรุปรวมใน s (ลองเช็คชื่อฟิลด์ของ s อีกทีให้ตรงกับที่คุณใช้)
-      const ads = s.platformAds?.[k] || 0 
-      const gp  = s.platformGp?.[k] || 0
+  // ── คำนวณยอด Ads และ GP แยกตาม Platform จากก้อน expenses ──────────────────
+  const { adsByPlatform, gpByPlatform } = useMemo(() => {
+    const ads = {}
+    const gp = {}
 
-      return {
-        key: k,
-        rev,
-        ads,
-        gp,
-        net: rev - ads - gp,
-        cnt: s.platformCnt?.[k] || 0,
-        transfer: s.platformTransfer?.[k] || 0,
-        subsidy: s.platformSubsidy?.[k] || 0,
-        cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
+    // เรียกฟังก์ชันฟิลเตอร์ตาม period เดียวกับฝั่งออเดอร์
+    const filteredExpenses =
+      period === 'custom'
+        ? filterByRange(expenses, from, to) // ใน Overview ใช้ชื่อฟังก์ชัน filterByRange / filterByPeriod
+        : filterByPeriod(expenses, period)
+
+    for (const e of filteredExpenses) {
+      const cat = (e.category || '').toLowerCase().trim()
+      let platform = (e.platform || 'pos').toLowerCase().trim()
+
+      if (platform.includes('grab')) platform = 'grab'
+      else if (platform.includes('line')) platform = 'lineman'
+      else if (platform.includes('shopee')) platform = 'shopee'
+      else platform = 'pos'
+
+      if (cat.includes('ads')) {
+        ads[platform] = (ads[platform] || 0) + (e.amount || 0)
       }
-    })
+      if (cat.includes('gp')) {
+        gp[platform] = (gp[platform] || 0) + (e.amount || 0)
+      }
+    }
+
+    return { adsByPlatform: ads, gpByPlatform: gp }
+  }, [expenses, period, from, to])
+
+  // platform — ดึงสถิติมัดรวม Ads / GP จากตัวแปร s (computeStats) มาใช้ตรงๆ
+  const platforms = useMemo(() => {
+    return ['pos', 'grab', 'lineman', 'shopee']
+      .filter(k => (s.platformRev?.[k] || 0) > 0)
+      .map(k => {
+        const rev = s.platformRev?.[k] || 0
+        const ads = adsByPlatform[k] || 0
+        const gp  = gpByPlatform[k] || 0
+
+        return {
+          key: k,
+          rev,
+          ads,
+          gp,
+          net: rev - ads - gp,
+          cnt: s.platformCnt?.[k] || 0,
+          transfer: s.platformTransfer?.[k] || 0,
+          subsidy: s.platformSubsidy?.[k] || 0,
+          cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
+        }
+      })
+  }, [s, adsByPlatform, gpByPlatform])
 
   // POS payment split (ยังคงไว้ใช้ใน posPaymentSummary เดิม)
   const posPaymentSummary = useMemo(() => {
