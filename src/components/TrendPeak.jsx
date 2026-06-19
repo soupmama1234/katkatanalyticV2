@@ -41,15 +41,16 @@ function filterClosedByPeriod(closedDays, period, from, to) {
 }
 
 // ─── SUB TAB: แนวโน้ม ──────────────────────────────────────────────────────────
+// ─── SUB TAB: แนวโน้ม ──────────────────────────────────────────────────────────
 function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const [period, setPeriod] = useState('7d')
   const [from, setFrom] = useState(todayStr)
   const [to, setTo] = useState(todayStr)
   const PLATFORM_STYLE = {
-  pos:      { color: '#A0A0A0' },
-  grab:     { color: '#00B14F' },
-  lineman:  { color: '#00C300' },
-  shopee:   { color: '#EE4D2D' },
+    pos:      { color: '#A0A0A0' },
+    grab:     { color: '#00B14F' },
+    lineman:  { color: '#00C300' },
+    shopee:   { color: '#EE4D2D' },
   }
 
   // ─────────────────────────────
@@ -183,36 +184,36 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
   // ─────────────────────────────
   // COST MAP (OPTIMIZED)
   // ─────────────────────────────
- const { adsByPlatform, gpByPlatform } = useMemo(() => {
-  const ads = {}
-  const gp = {}
+  const { adsByPlatform, gpByPlatform } = useMemo(() => {
+    const ads = {}
+    const gp = {}
 
-  const filteredExpenses =
-    period === 'custom'
-      ? filterExpByRange(expenses, from, to)
-      : filterExpByPeriod(expenses, period)
+    const filteredExpenses =
+      period === 'custom'
+        ? filterExpByRange(expenses, from, to)
+        : filterExpByPeriod(expenses, period)
 
-  for (const e of filteredExpenses) {
-    const cat = (e.category || '').toLowerCase().trim()
+    for (const e of filteredExpenses) {
+      const cat = (e.category || '').toLowerCase().trim()
 
-    let platform = (e.platform || 'pos').toLowerCase().trim()
+      let platform = (e.platform || 'pos').toLowerCase().trim()
 
-    if (platform.includes('grab')) platform = 'grab'
-    else if (platform.includes('line')) platform = 'lineman'
-    else if (platform.includes('shopee')) platform = 'shopee'
-    else platform = 'pos'
+      if (platform.includes('grab')) platform = 'grab'
+      else if (platform.includes('line')) platform = 'lineman'
+      else if (platform.includes('shopee')) platform = 'shopee'
+      else platform = 'pos'
 
-    if (cat.includes('ads')) {
-      ads[platform] = (ads[platform] || 0) + (e.amount || 0)
+      if (cat.includes('ads')) {
+        ads[platform] = (ads[platform] || 0) + (e.amount || 0)
+      }
+
+      if (cat.includes('gp')) {
+        gp[platform] = (gp[platform] || 0) + (e.amount || 0)
+      }
     }
 
-    if (cat.includes('gp')) {
-      gp[platform] = (gp[platform] || 0) + (e.amount || 0)
-    }
-  }
-
-  return { adsByPlatform: ads, gpByPlatform: gp }
-}, [expenses, period, from, to])
+    return { adsByPlatform: ads, gpByPlatform: gp }
+  }, [expenses, period, from, to])
 
   // ─────────────────────────────
   // PLATFORM
@@ -342,71 +343,166 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         <div style={S.cardTitle}>📡 Platform</div>
 
         {platforms.map(p => {
-  const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
+          const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
 
-  const color =
-    p.key === 'grab' ? '#00B14F' :
-    p.key === 'lineman' ? '#00A84F' :
-    p.key === 'shopee' ? '#EE4D2D' :
-    'var(--primary)'
+          const color =
+            p.key === 'grab' ? '#00B14F' :
+            p.key === 'lineman' ? '#00A84F' :
+            p.key === 'shopee' ? '#EE4D2D' :
+            'var(--primary)'
 
-  return (
-    <div key={p.key} style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '10px 0',
-      borderBottom: '1px solid var(--border2)'
-    }}>
+          return (
+            <div key={p.key} style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 0',
+              borderBottom: '1px solid var(--border2)'
+            }}>
 
-      {/* LEFT */}
-      <div style={{ width: 70 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color }}>
-          {p.key.toUpperCase()}
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-          {p.cnt} บิล
-        </div>
+              {/* LEFT */}
+              <div style={{ width: 70 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color }}>
+                  {p.key.toUpperCase()}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--dim)' }}>
+                  {p.cnt} บิล
+                </div>
+              </div>
+
+              {/* MID BAR */}
+              <div style={{ flex: 1 }}>
+                <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
+                  <div
+                    style={{
+                      width: `${pct}%`,
+                      height: '100%',
+                      background: color,
+                      borderRadius: 3
+                    }}
+                  />
+                </div>
+
+                <div style={{ fontSize: 10, marginTop: 5, color: 'var(--dim)' }}>
+                  💵 {fmt(p.cash)} 📱 {fmt(p.transfer)} 🏛️ {fmt(p.subsidy)}
+                </div>
+              </div>
+
+              {/* RIGHT */}
+              <div style={{ textAlign: 'right', minWidth: 90 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color }}>
+                  ฿{fmt(p.rev)}
+                </div>
+
+                <div style={{ fontSize: 10, color: '#FF453A' }}>
+                  Ads -{fmt(p.ads)}
+                </div>
+
+                <div style={{ fontSize: 10, color: '#FF9F0A' }}>
+                  GP -{fmt(p.gp)}
+                </div>
+
+                <div style={{ fontSize: 12, fontWeight: 800 }}>
+                  Net {fmt(p.net)}
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* MID BAR */}
-      <div style={{ flex: 1 }}>
-        <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
-          <div
-            style={{
-              width: `${pct}%`,
-              height: '100%',
-              background: color,
-              borderRadius: 3
-            }}
-          />
-        </div>
+      {/* 💸 ต้นทุน vs รายรับ */}
+      {expenses && expenses.length > 0 && (() => {
+        const monthlyRev = {}, monthlyExp = {}
+        orders.forEach(r => {
+          const m = (r.created_at || '').slice(0, 7)
+          if (m) monthlyRev[m] = (monthlyRev[m] || 0) + (r.actual_amount || 0)
+        })
+        const expForPeriod = period === 'custom'
+          ? filterExpByRange(expenses, from, to)
+          : filterExpByPeriod(expenses, period)
+        expForPeriod.filter(e => e.category !== 'ส่วนลด').forEach(e => {
+          const m = (e.date || '').slice(0, 7)
+          if (m) monthlyExp[m] = (monthlyExp[m] || 0) + (e.amount || 0)
+        })
+        const months = [...new Set([...Object.keys(monthlyRev), ...Object.keys(monthlyExp)])].sort().slice(-12)
+        const costChart = months.map(m => ({
+          label: new Date(+m.split('-')[0], +m.split('-')[1] - 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }),
+          rev:    Math.round(monthlyRev[m] || 0),
+          exp:    Math.round(monthlyExp[m] || 0),
+        }))
+        const totalExpAll = expForPeriod.filter(e => e.category !== 'ส่วนลด').reduce((s, e) => s + (e.amount || 0), 0)
+        const profit = total - totalExpAll
+        const margin = total > 0 ? Math.round(profit / total * 100) : null
 
-        <div style={{ fontSize: 10, marginTop: 5, color: 'var(--dim)' }}>
-          💵 {fmt(p.cash)} 📱 {fmt(p.transfer)} 🏛️ {fmt(p.subsidy)}
-        </div>
+        return (
+          <>
+            <div style={{ ...S.card, background: profit >= 0 ? 'rgba(50,215,75,0.06)' : 'rgba(255,69,58,0.06)', border: `1px solid ${profit >= 0 ? 'rgba(50,215,75,0.2)' : 'rgba(255,69,58,0.2)'}` }}>
+              <div style={S.cardTitle}>💸 รายรับ vs ต้นทุน</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, textAlign: 'center' }}>
+                {[
+                  { label: 'รายรับ',   val: `฿${fmt(total)}`,           color: 'var(--success)' },
+                  { label: 'ต้นทุน',   val: `฿${fmt(totalExpAll)}`,     color: 'var(--danger)'  },
+                  { label: 'กำไร',     val: `฿${fmt(Math.abs(profit))}`, color: profit >= 0 ? 'var(--success)' : 'var(--danger)' },
+                ].map(({ label, val, color }) => (
+                  <div key={label}>
+                    <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 15, color }}>{val}</div>
+                    <div style={{ fontSize: 10, color: 'var(--dim)', marginTop: 2 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              {margin !== null && (
+                <div style={{ textAlign: 'center', marginTop: 10, fontSize: 13, fontWeight: 700,
+                  color: margin >= 30 ? 'var(--success)' : margin >= 0 ? 'var(--primary)' : 'var(--danger)' }}>
+                  Gross Margin {margin}%
+                </div>
+              )}
+            </div>
+
+            {costChart.length > 1 && (
+              <div style={S.card}>
+                <div style={S.cardTitle}>📊 รายรับ vs ต้นทุน รายเดือน</div>
+                <div style={{ display: 'flex', gap: 14, marginBottom: 8 }}>
+                  {[['rgba(50,215,75,0.8)', 'รายรับ'], ['rgba(255,69,58,0.8)', 'ต้นทุน']].map(([color, label]) => (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+                      <span style={{ fontSize: 11, color: 'var(--dim)' }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={costChart} margin={{ left: -10, right: 5 }}>
+                    <XAxis dataKey="label" tick={{ fill: '#555', fontSize: 9 }} />
+                    <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+                    <Tooltip {...CHART_TIP} formatter={(v, n) => [`฿${fmt(v)}`, n === 'rev' ? 'รายรับ' : 'ต้นทุน']} />
+                    <Bar dataKey="rev" fill="rgba(50,215,75,0.8)" radius={[3,3,0,0]} />
+                    <Bar dataKey="exp" fill="rgba(255,69,58,0.8)" radius={[3,3,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </>
+        )
+      })()}
+
+      <div style={S.card}>
+        <div style={S.cardTitle}>📅 วันไหนขายดีสุด (เฉลี่ย)</div>
+        <ResponsiveContainer width="100%" height={140}>
+          <BarChart data={weekdayData} margin={{ left: -10, right: 10 }}>
+            <XAxis dataKey="day" tick={{ fill: '#555', fontSize: 11 }} />
+            <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
+            <Tooltip {...CHART_TIP} formatter={v => [`฿${fmt(v)}`, 'เฉลี่ย/บิล']} />
+            <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
+              {weekdayData.map((d, i) => (
+                <Cell key={i} fill={d.avg === maxWd ? 'var(--success)' : 'rgba(50,215,75,0.25)'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
-
-      {/* RIGHT */}
-      <div style={{ textAlign: 'right', minWidth: 90 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color }}>
-          ฿{fmt(p.rev)}
-        </div>
-
-        <div style={{ fontSize: 10, color: '#FF453A' }}>
-          Ads -{fmt(p.ads)}
-        </div>
-
-        <div style={{ fontSize: 10, color: '#FF9F0A' }}>
-          GP -{fmt(p.gp)}
-        </div>
-
-        <div style={{ fontSize: 12, fontWeight: 800 }}>
-          Net {fmt(p.net)}
-        </div>
-      </div>
-})}
     </div>
+  )
+}
       {/* 💸 ต้นทุน vs รายรับ */}
       {expenses && expenses.length > 0 && (() => {
         const monthlyRev = {}, monthlyExp = {}
