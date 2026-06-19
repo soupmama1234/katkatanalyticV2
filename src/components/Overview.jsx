@@ -10,7 +10,6 @@ import {
 } from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
 
-// ── filter closedDays ให้อยู่ในช่วง period เดียวกับ orders ──────────────────
 function filterClosedDays(closedDays, period, from, to) {
   if (!closedDays?.length) return []
   if (period === 'custom') {
@@ -47,14 +46,13 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
   const [from, setFrom] = useState(todayStr)
   const [to, setTo]     = useState(todayStr)
 
-  // ── ส่วนการตั้งค่าระบบจำลองเปอร์เซ็นต์ GP (Precalculated Config) ──
   const [showGpConfig, setShowGpConfig] = useState(false)
   const [gpRates, setGpRates] = useState({
-    grab: 33.70,          // ค่าคอมมิชชันปกติคงที่ (32.10% + 1.60%) ของ Grab
-    lineman: 32.10,       // ค่าคอมมิชชันปกติคงที่ (32.10%) ของ Lineman
+    grab: 33.70,          
+    lineman: 32.10,       
     shopee: 32.10,
     pos: 0.00,
-    govSubsidy: 9.63      // คอนเฟิร์มค่าคอมมิชชันคงที่ 9.63% ของโครงการรัฐ (ไทยช่วยไทยพลัส)
+    govSubsidy: 9.63      
   })
 
   const handleRateChange = (key, val) => {
@@ -87,7 +85,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
 
   const dailyAvg = s.dailyAvg
 
-  // item count
   let totalItems = 0
   const menuT = {}
   orders.forEach(r => {
@@ -102,12 +99,10 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     })
   })
 
-  // top menu for chart
   const topMenu = Object.entries(s.menuCount)
     .sort((a, b) => b[1] - a[1]).slice(0, 10)
     .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + '…' : name, qty, rev: s.menuRev[name] || 0 }))
 
-  // ── คำนวณยอด Ads และ GP แยกตาม Platform จากก้อน expenses ──────────────────
   const { adsByPlatform, gpByPlatform } = useMemo(() => {
     const ads = {}
     const gp = {}
@@ -137,7 +132,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
     return { adsByPlatform: ads, gpByPlatform: gp }
   }, [expenses, period, from, to])
 
-  // platform — ดึงสถิติมัดรวมยอดขาย และทำ Precalculated GP แบบแยกยอดปกติกับยอดโครงการรัฐ
   const platforms = useMemo(() => {
     return ['pos', 'grab', 'lineman', 'shopee']
       .filter(k => (s.platformRev?.[k] || 0) > 0)
@@ -145,15 +139,12 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         const rev = s.platformRev?.[k] || 0
         const ads = adsByPlatform[k] || 0
         const gp  = gpByPlatform[k] || 0
-        const subsidy = s.platformTransfer?.[k] || 0 // ยอดขายจากโครงการรัฐ (ตาม UI ดั้งเดิมใช้ตัวแปรตัวนี้หรือดึงจาก s)
+        const subsidy = s.platformTransfer?.[k] || 0 
 
-        // ── สูตรคำนวณแยก 2 ขา (แก้ปัญหา Est. Net คลาดเคลื่อนจากโครงการรัฐ) ──
         const normalSales = Math.max(0, rev - subsidy)
-        
         const normalGpRate = gpRates[k] || 0
         const subsidyGpRate = gpRates.govSubsidy || 0
 
-        // คิดแยกทีละส่วนแล้วปัดเศษ
         const gpOnNormalSales = Math.round(normalSales * (normalGpRate / 100))
         const gpOnSubsidySales = Math.round(subsidy * (subsidyGpRate / 100))
 
@@ -179,8 +170,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
   const dailyRows = Object.entries(s.dailyMap)
     .sort((a, b) => b[0].localeCompare(a[0])).slice(0, 14)
 
-  const topMods = Object.entries(s.menuCount).sort((a, b) => b[1] - a[1]).slice(0, 8)
-
   const closedSet = new Set(filteredClosedDays.map(d => d.date))
 
   return (
@@ -192,7 +181,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         onFromChange={setFrom} onToChange={setTo}
       />
 
-      {/* Stats หลัก */}
       <div style={S.grid4}>
         <StatCard icon="💰" label="ยอดรับจริง" value={`฿${fmt(total)}`} color="var(--primary)" />
         <StatCard icon="🧾" label="ออเดอร์" value={fmt(orders.length)} unit="บิล" />
@@ -202,7 +190,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         <StatCard icon="📈" label="เฉลี่ย/วันเปิด" value={dailyAvg ? `฿${fmt(dailyAvg)}` : '—'} color="var(--primary)" />
       </div>
 
-      {/* Operating days summary */}
       {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
           <div style={S.miniCard}>
@@ -240,7 +227,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
           </button>
         </div>
 
-        {/* แผงควบคุมสัดส่วนอัตรา % GP ชั่วคราว */}
         {showGpConfig && (
           <div style={{ background: '#121212', borderRadius: 8, padding: 10, marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, border: '1px solid #222' }}>
             {['grab', 'lineman', 'shopee'].map(k => (
@@ -296,8 +282,13 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
                   ฿{fmt(p.rev)}
                 </div>
                 
+                {/* 1. Ads จริง */}
+                {p.ads > 0 && <div style={{ fontSize: 10, color: '#FF453A' }}>Ads จริง -{fmt(p.ads)}</div>}
+
+                {/* 2. GP จริง */}
                 {p.gp > 0 && <div style={{ fontSize: 10, color: '#FF9F0A' }}>GP จริง -{fmt(p.gp)}</div>}
                 
+                {/* 3. Gp est */}
                 {p.key !== 'pos' && (
                   <div style={{ fontSize: 9, color: 'var(--dim)', fontStyle: 'italic' }}>
                     Est.GP -{fmt(p.simulatedGpAmount)}
@@ -315,7 +306,7 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {platforms.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Top menu chart */}
+      {/* Categories & Items & History */}
       <div style={S.section}>
         <div style={S.secTitle}>🏆 เมนูขายดี Top 10</div>
         {topMenu.length > 0 ? (
@@ -336,7 +327,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         ) : <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Categories */}
       <div style={S.section}>
         <div style={S.secTitle}>📂 แยกหมวดหมู่</div>
         {Object.entries(s.catRev).sort((a, b) => b[1] - a[1]).map(([cat, rev]) => {
@@ -357,7 +347,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {Object.keys(s.catRev).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* All items */}
       <div style={S.section}>
         <div style={S.secTitle}>🧾 รายการที่ขายได้</div>
         {Object.entries(menuT).sort((a, b) => b[1].qty - a[1].qty).map(([name, d]) => {
@@ -375,7 +364,6 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
         {Object.keys(menuT).length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
-      {/* Daily history */}
       <div style={S.section}>
         <div style={S.secTitle}>📅 ประวัติรายวัน</div>
         {dailyRows.map(([d, v]) => {
@@ -412,5 +400,5 @@ const S = {
   secTitleNoMargin: { fontSize: 12, color: 'var(--dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 },
   platformRow: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' },
   empty:       { textAlign: 'center', color: 'var(--dim)', padding: '16px 0', fontSize: 13 },
-    }
+                                                    }
         
