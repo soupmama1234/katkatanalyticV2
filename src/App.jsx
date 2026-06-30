@@ -70,7 +70,7 @@ export default function App() {
   const { toast, showToast } = useToast()
   const [session, setSession]     = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
-  
+  const [gmailConnected, setGmailConnected] = useState(false)
 
   useEffect(() => {
     // ตรวจ session ที่มีอยู่แล้ว
@@ -149,6 +149,15 @@ export default function App() {
           <button onClick={refetch} style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontSize: 18, padding: 4 }} title="รีโหลด">
             🔄
           </button>
+          <button
+  onClick={() => {
+    supabase.auth.signInWithOAuth({
+      provider: 'google'
+    })
+  }}
+>
+  Connect Gmail
+</button>
           <button
             onClick={() => supabase.auth.signOut()}
             style={{
