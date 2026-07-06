@@ -21,14 +21,14 @@ function parseGrabText(text) {
   const subsidy = Math.abs(parseFloat(subsidyAdj));
 
   const rows = [];
-  if (gp > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP Grab', amount: gp, date });
-  if (ads > 0) rows.push({ platform: 'grab', category: 'Ads Platform', item: 'Ads Grab', amount: ads, date });
-  if (subsidy > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP ไทยช่วยไทย Grab', amount: subsidy, date });
+  if (gp > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP Grab', amount: gp, date, sync_key: `grab:${date}:gp` });
+  if (ads > 0) rows.push({ platform: 'grab', category: 'Ads Platform', item: 'Ads Grab', amount: ads, date, sync_key: `grab:${date}:ads` });
+  if (subsidy > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP ไทยช่วยไทย Grab', amount: subsidy, date, sync_key: `grab:${date}:gp_subsidy` });
 
   return { rows, date };
 }
 
-// ── Lineman: parse text ที่ extract จาก HTML body (strip tags → " | " แล้ว) ──
+// ── Lineman: parse text ที่ extract จาก HTML body (แปลง <br>/<p> เป็น \n ก่อนแล้ว) ──
 function parseLinemanHtml(text) {
   const gpMatch  = text.match(/ค่าบริการ GP \(รวม VAT\)[\s|]*(-?[\d.]+)/);
   const discMatch = text.match(/ค่าส่วนลดค่าส่ง \(รวม VAT\)[\s|]*(-?[\d.]+)/);
@@ -47,11 +47,11 @@ function parseLinemanHtml(text) {
   const rows = [];
   if (gpMatch) {
     const gp = Math.abs(parseFloat(gpMatch[1]));
-    if (gp > 0) rows.push({ platform: 'lineman', category: 'GP Platform', item: 'GP LINE MAN', amount: gp, date });
+    if (gp > 0) rows.push({ platform: 'lineman', category: 'GP Platform', item: 'GP LINE MAN', amount: gp, date, sync_key: `lineman:${date}:gp` });
   }
   if (discMatch) {
     const disc = Math.abs(parseFloat(discMatch[1]));
-    if (disc > 0) rows.push({ platform: 'lineman', category: 'ส่วนลด', item: 'ส่วนลดค่าส่ง LINE MAN', amount: disc, date });
+    if (disc > 0) rows.push({ platform: 'lineman', category: 'Ads Platform', item: 'ส่วนลดค่าส่ง LINE MAN', amount: disc, date, sync_key: `lineman:${date}:ads` });
   }
   if (!gpMatch && !discMatch) return { error: 'ไม่พบข้อมูล GP/ส่วนลด', raw: text.slice(0, 500) };
 
@@ -71,9 +71,10 @@ function parseShopeeHtml(text) {
   const gp = (gpMatch ? parseFloat(gpMatch[1]) : 0) + (gpVatMatch ? parseFloat(gpVatMatch[1]) : 0);
   const ads = adsMatch ? parseFloat(adsMatch[1]) : 0;
 
+  const periodKey = `${periodStart}_${periodEnd}`;
   const rows = [];
-  if (gp > 0) rows.push({ platform: 'shopee', category: 'GP Platform', item: 'GP ShopeeFood', amount: gp, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd });
-  if (ads > 0) rows.push({ platform: 'shopee', category: 'Ads Platform', item: 'Ads ShopeeFood', amount: ads, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd });
+  if (gp > 0) rows.push({ platform: 'shopee', category: 'GP Platform', item: 'GP ShopeeFood', amount: gp, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd, sync_key: `shopee:${periodKey}:gp` });
+  if (ads > 0) rows.push({ platform: 'shopee', category: 'Ads Platform', item: 'Ads ShopeeFood', amount: ads, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd, sync_key: `shopee:${periodKey}:ads` });
 
   return { rows, periodStart, periodEnd };
 }
