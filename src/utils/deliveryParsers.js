@@ -18,6 +18,7 @@ function parseGrabText(text) {
     const month = String(THAI_MONTHS[monthName]).padStart(2, '0');
     date = `${year}-${month}-${String(day).padStart(2, '0')}`;
   }
+  if (!date) return { error: 'ไม่พบวันที่ในอีเมล', raw: text.slice(0, 500) };
 
   const [, , , , , commission, commissionExtra, marketing, , subsidyAdj] = rowMatch;
   const gp = Math.abs(parseFloat(commission)) + Math.abs(parseFloat(commissionExtra));
@@ -47,6 +48,7 @@ function parseLinemanHtml(text) {
     const month = String(THAI_MONTHS_ABBR[monthAbbr]).padStart(2, '0');
     date = `${year}-${month}-${String(day).padStart(2, '0')}`;
   }
+  if (!date) return { error: 'ไม่พบวันที่ในอีเมล', raw: text.slice(0, 500) };
 
   const rows = [];
   if (gpMatch) {
