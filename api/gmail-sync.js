@@ -11,9 +11,10 @@ const SENDERS = {
   shopee:  'noreply.th@shopeefood.com',
 }
 
-// Grab ใช้ sender เดียวกันส่งทั้งใบเสร็จภาษีและรายงานสรุปยอดขาย ต้องกรอง subject เพิ่มเพื่อไม่ให้จับใบเสร็จผิด
+// Grab/Lineman ใช้ sender เดียวกันส่งอีเมลหลายประเภท ต้องกรอง subject เพิ่มไม่ให้จับผิดใบ
 const SUBJECT_FILTERS = {
   grab: 'สรุปยอดขายสำหรับคำสั่งซื้อ',
+  lineman: 'รายงานยอดขายรายวัน',
 }
 
 // ── แลก refresh token เป็น access token ใหม่ (หมดอายุทุก 1 ชม.) ──
