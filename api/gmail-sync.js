@@ -11,6 +11,11 @@ const SENDERS = {
   shopee:  'noreply.th@shopeefood.com',
 }
 
+// Grab ใช้ sender เดียวกันส่งทั้งใบเสร็จภาษีและรายงานสรุปยอดขาย ต้องกรอง subject เพิ่มเพื่อไม่ให้จับใบเสร็จผิด
+const SUBJECT_FILTERS = {
+  grab: 'สรุปยอดขายสำหรับคำสั่งซื้อ',
+}
+
 // ── แลก refresh token เป็น access token ใหม่ (หมดอายุทุก 1 ชม.) ──
 async function getAccessToken() {
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -29,14 +34,15 @@ async function getAccessToken() {
 }
 
 // ── หา message id ทั้งหมดที่ตรงกับ sender + ช่วงวันที่ ──
-async function listMessageIds(accessToken, sender, afterDate, beforeDate) {
+async function listMessageIds(accessToken, sender, afterDate, beforeDate, subjectFilter) {
   // Gmail search: after: รวมวันนั้น, before: ไม่รวมวันนั้น → +1 วันให้ before ครอบคลุม toDate เต็มวัน
   const after = afterDate.replace(/-/g, '/')
   const beforeObj = new Date(beforeDate)
   beforeObj.setDate(beforeObj.getDate() + 1)
   const before = beforeObj.toISOString().slice(0, 10).replace(/-/g, '/')
 
-  const q = `from:${sender} after:${after} before:${before}`
+  let q = `from:${sender} after:${after} before:${before}`
+  if (subjectFilter) q += ` subject:"${subjectFilter}"`
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
   const data = await res.json()
@@ -77,7 +83,7 @@ export default async function handler(req, res) {
 
     for (const platform of ['grab', 'lineman', 'shopee']) {
       const sender = SENDERS[platform]
-      const messageIds = await listMessageIds(accessToken, sender, from, to)
+      const messageIds = await listMessageIds(accessToken, sender, from, to, SUBJECT_FILTERS[platform])
 
       for (const id of messageIds) {
         const rawBuffer = await fetchRawMessage(accessToken, id)
