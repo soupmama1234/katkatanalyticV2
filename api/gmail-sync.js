@@ -36,10 +36,12 @@ async function getAccessToken() {
 
 // ── หา message id ทั้งหมดที่ตรงกับ sender + ช่วงวันที่ ──
 async function listMessageIds(accessToken, sender, afterDate, beforeDate, subjectFilter) {
-  // Gmail search: after: รวมวันนั้น, before: ไม่รวมวันนั้น → +1 วันให้ before ครอบคลุม toDate เต็มวัน
+  // Gmail search: after: รวมวันนั้น, before: ไม่รวมวันนั้น
+  // +2 วัน = +1 ให้ before ครอบคลุม toDate เต็มวัน, +1 อีกตัวเพราะอีเมลรายงานมาช้ากว่าวันที่รายงานจริง 1 วันเสมอ
+  // (เช่น รายงานวันที่ 27 มิ.ย. จะถูกส่งจริงวันที่ 28 มิ.ย. — ยืนยันแล้วจากอีเมลจริงทั้ง Grab/Lineman/Shopee)
   const after = afterDate.replace(/-/g, '/')
   const beforeObj = new Date(beforeDate)
-  beforeObj.setDate(beforeObj.getDate() + 1)
+  beforeObj.setDate(beforeObj.getDate() + 2)
   const before = beforeObj.toISOString().slice(0, 10).replace(/-/g, '/')
 
   let q = `from:${sender} after:${after} before:${before}`
