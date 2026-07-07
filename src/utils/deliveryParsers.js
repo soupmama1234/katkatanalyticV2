@@ -2,14 +2,33 @@
 function parseGrabText(text) {
   // หา row ตัวเลข 11 คอลัมน์ในตาราง "สรุปข้อมูล"
   // ตัวอย่าง: 468.00 0.00 0.00 0.00 -150.23 -7.50 -10.70 0.00 -30.14 269.43 0.00
-  // หมายเหตุ: pdf-parse ดึงตัวเลข 11 ค่าติดกันไม่มีช่องว่างเลย เช่น
-  // 468.000.000.000.00-150.23-7.50-10.700.00-30.14269.430.00
-  // ใช้จุดทศนิยม (เสมอ 2 ตำแหน่ง, ไม่มี comma คั่นหลัก) เป็นตัวแบ่งขอบเขตตัวเลข
-  const NUM = '(-?\\d+\\.\\d{2})';
-  const rowMatch = text.match(new RegExp(NUM.repeat(11)));
-  const dateMatch = text.match(/(\d{1,2})\s+(กรกฎาคม|มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+(\d{4})/);
+  // Grab's PDF font เข้ารหัสวรรณยุกต์บางตัวเป็น Private Use Area (ไม่ใช่ Unicode ไทยมาตรฐาน)
+  // และบางคำถูกตัดกลางคำด้วย \n (line wrap ในตาราง) — normalize ตัดวรรณยุกต์(ทั้ง 2 แบบ)/ช่องว่างออกก่อนเทียบ
+  const normalize = (s) => s.replace(/[\u0E48-\u0E4B\uF700-\uF7FF]/g, '').replace(/\s+/g, '');
 
-  if (!rowMatch) return { error: 'ไม่พบตารางสรุปข้อมูล', raw: text.slice(0, 500) };
+  const headerIdx = text.search(/รายการ\s*VAT/);
+  if (headerIdx === -1) return { error: 'ไม่พบหัวตารางสรุปข้อมูล', raw: text.slice(0, 500) };
+  const afterHeader = text.slice(headerIdx);
+
+  // ตัวเลขติดกันไม่มีช่องว่าง เช่น 468.000.000.000.00-150.23-7.50-10.700.00-30.14269.430.00
+  const blobMatch = afterHeader.match(/(?:-?\d+\.\d{2}){8,}/);
+  if (!blobMatch) return { error: 'ไม่พบแถวตัวเลขในตารางสรุปข้อมูล', raw: text.slice(0, 500) };
+
+  const headerBlock = normalize(afterHeader.slice(0, blobMatch.index));
+  const hasCommissionExtra = headerBlock.includes(normalize('ค่าคอมมิชชั่นเพิ่มเติม'));
+  const hasAds = headerBlock.includes(normalize('ค่าธรรมเนียมการตลาด'));
+  const hasSubsidyAdj = headerBlock.includes(normalize('การปรับรายได้'));
+
+  const numbers = blobMatch[0].match(/-?\d+\.\d{2}/g);
+  let i = 0;
+  i++; i++; i++; i++; // ยอดรายการ, VAT, ค่าบริการร้าน, โปรโมชั่นร้าน — ไม่ใช้ในการคำนวณ
+  const commission = numbers[i++];
+  const commissionExtra = hasCommissionExtra ? numbers[i++] : '0.00';
+  const marketing = hasAds ? numbers[i++] : '0.00';
+  i++; // ส่วนลดค่าจัดส่งโดยร้าน — ไม่ใช้ในการคำนวณ
+  const subsidyAdj = hasSubsidyAdj ? numbers[i++] : '0.00';
+
+  const dateMatch = text.match(/(\d{1,2})\s+(กรกฎาคม|มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+(\d{4})/);
 
   const THAI_MONTHS = { 'มกราคม':1,'กุมภาพันธ์':2,'มีนาคม':3,'เมษายน':4,'พฤษภาคม':5,'มิถุนายน':6,'กรกฎาคม':7,'สิงหาคม':8,'กันยายน':9,'ตุลาคม':10,'พฤศจิกายน':11,'ธันวาคม':12 };
   let date = null;
@@ -20,7 +39,6 @@ function parseGrabText(text) {
   }
   if (!date) return { error: 'ไม่พบวันที่ในอีเมล', raw: text.slice(0, 500) };
 
-  const [, , , , , commission, commissionExtra, marketing, , subsidyAdj] = rowMatch;
   const gp = Math.abs(parseFloat(commission)) + Math.abs(parseFloat(commissionExtra));
   const ads = Math.abs(parseFloat(marketing));
   const subsidy = Math.abs(parseFloat(subsidyAdj));
