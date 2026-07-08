@@ -13,7 +13,7 @@ export default function DeliverySync({ setExpenses, notify }) {
   const [from, setFrom] = useState(daysAgo(3))
   const [to, setTo] = useState(todayStr)
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(null) // { newRows, skippedCount, needsReview }
+  const [result, setResult] = useState(null) // { newRows, alreadySyncedRows, needsReview }
   const [checked, setChecked] = useState([]) // indices ของ newRows ที่เลือกไว้
   const [saving, setSaving] = useState(false)
 
@@ -34,9 +34,9 @@ export default function DeliverySync({ setExpenses, notify }) {
       const existingSet = new Set((existing || []).map(e => e.sync_key))
 
       const newRows = (data.rows || []).filter(r => !existingSet.has(r.sync_key))
-      const skippedCount = (data.rows || []).length - newRows.length
+      const alreadySyncedRows = (data.rows || []).filter(r => existingSet.has(r.sync_key))
 
-      setResult({ newRows, skippedCount, needsReview: data.needsReview || [] })
+      setResult({ newRows, alreadySyncedRows, needsReview: data.needsReview || [] })
       setChecked(newRows.map((_, i) => i))
     } catch (e) {
       notify('ดึงข้อมูลไม่สำเร็จ: ' + e.message, 'error')
@@ -47,6 +47,9 @@ export default function DeliverySync({ setExpenses, notify }) {
   const toggleCheck = (i) => {
     setChecked(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])
   }
+
+  const selectAll = () => setChecked(result.newRows.map((_, i) => i))
+  const deselectAll = () => setChecked([])
 
   const handleConfirm = async () => {
     if (!result) return
@@ -108,7 +111,7 @@ export default function DeliverySync({ setExpenses, notify }) {
               <div style={{ fontSize: 10, color: 'var(--dim)' }}>✅ พร้อม sync</div>
             </div>
             <div style={{ background: 'var(--surface)', borderRadius: 12, padding: '10px 12px', border: '1px solid var(--border)', textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--dim)' }}>{result.skippedCount}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--dim)' }}>{result.alreadySyncedRows.length}</div>
               <div style={{ fontSize: 10, color: 'var(--dim)' }}>⏭️ ลงแล้ว</div>
             </div>
             <div style={{ background: 'var(--surface)', borderRadius: 12, padding: '10px 12px', border: '1px solid var(--border)', textAlign: 'center' }}>
@@ -120,7 +123,13 @@ export default function DeliverySync({ setExpenses, notify }) {
           {/* รายการพร้อม sync */}
           {result.newRows.length > 0 && (
             <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 14, marginBottom: 14, border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>✅ รายการที่พร้อม sync</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>✅ รายการที่พร้อม sync</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={selectAll} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 10px', color: 'var(--primary)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>เลือกทั้งหมด</button>
+                  <button onClick={deselectAll} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 10px', color: 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>ไม่เลือกเลย</button>
+                </div>
+              </div>
               {result.newRows.map((r, i) => (
                 <div key={r.sync_key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border2)' }}>
                   <input type="checkbox" checked={checked.includes(i)} onChange={() => toggleCheck(i)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
@@ -140,6 +149,23 @@ export default function DeliverySync({ setExpenses, notify }) {
                 {saving ? '⏳ กำลังบันทึก...' : `💾 ยืนยัน sync (${checked.length} รายการ)`}
               </button>
             </div>
+          )}
+
+          {/* รายการที่ลงแล้ว — พับเก็บไว้ กดดูได้ */}
+          {result.alreadySyncedRows.length > 0 && (
+            <details style={{ background: 'var(--surface)', borderRadius: 16, padding: 14, marginBottom: 14, border: '1px solid var(--border)' }}>
+              <summary style={{ fontSize: 13, fontWeight: 700, color: 'var(--dim)', cursor: 'pointer' }}>
+                ⏭️ ดูรายการที่ลงแล้ว ({result.alreadySyncedRows.length})
+              </summary>
+              <div style={{ marginTop: 10 }}>
+                {result.alreadySyncedRows.map(r => (
+                  <div key={r.sync_key} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border2)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--dim)' }}>{r.item}</div>
+                    <div style={{ fontSize: 11, color: 'var(--dim)' }}>{r.date}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
 
           {/* รายการที่ต้องตรวจสอบเอง */}
