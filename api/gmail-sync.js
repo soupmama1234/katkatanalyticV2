@@ -37,11 +37,14 @@ async function getAccessToken() {
 // ── หา message id ทั้งหมดที่ตรงกับ sender + ช่วงวันที่ ──
 async function listMessageIds(accessToken, sender, afterDate, beforeDate, subjectFilter) {
   // Gmail search: after: รวมวันนั้น, before: ไม่รวมวันนั้น
-  // +2 วัน = +1 ให้ before ครอบคลุม toDate เต็มวัน, +1 อีกตัวเพราะอีเมลรายงานมาช้ากว่าวันที่รายงานจริง 1 วันเสมอ
-  // (เช่น รายงานวันที่ 27 มิ.ย. จะถูกส่งจริงวันที่ 28 มิ.ย. — ยืนยันแล้วจากอีเมลจริงทั้ง Grab/Lineman/Shopee)
-  const after = afterDate.replace(/-/g, '/')
+  // อีเมลรายงานมาช้ากว่าวันที่รายงานจริง 1 วันเสมอ (ยืนยันจากอีเมลจริงทั้ง Grab/Lineman/Shopee)
+  // → ต้องขยับทั้ง after และ before ไป +1 วันเท่ากัน ไม่งั้นขอบเขตจะเบี้ยว (เคยลืมขยับฝั่ง after มาก่อน ทำให้หลุดวันก่อนหน้ามาด้วย)
+  const afterObj = new Date(afterDate)
+  afterObj.setDate(afterObj.getDate() + 1)
+  const after = afterObj.toISOString().slice(0, 10).replace(/-/g, '/')
+
   const beforeObj = new Date(beforeDate)
-  beforeObj.setDate(beforeObj.getDate() + 2)
+  beforeObj.setDate(beforeObj.getDate() + 2) // +1 ให้ before ครอบคลุม toDate เต็มวัน, +1 ชดเชย lag เหมือนกัน
   const before = beforeObj.toISOString().slice(0, 10).replace(/-/g, '/')
 
   let q = `from:${sender} after:${after} before:${before}`
