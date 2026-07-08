@@ -12,8 +12,9 @@ import ActionNotes from './expenses/ActionNotes.jsx'
 import Backup      from './expenses/Backup.jsx'
 import Forecast    from './expenses/Forecast.jsx'
 import ClosedDays from './expenses/ClosedDays.jsx'
+import DeliverySync from './expenses/DeliverySync.jsx'
 
-const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Export']
+const TABS = ['บันทึก', 'รายการ', 'Forecast', 'Action', 'วันหยุด', 'Sync', 'Export']
 
 
 export default function Expenses({ expenses, setExpenses, allOrders, actionNotes, setActionNotes, closedDays, setClosedDays }) {
@@ -40,6 +41,7 @@ export default function Expenses({ expenses, setExpenses, allOrders, actionNotes
       {tab === 'Forecast'  && <Forecast        expenses={expenses} />}
       {tab === 'Action'    && <ActionNotes     actionNotes={actionNotes} setActionNotes={setActionNotes} notify={notify} confirm={confirm} />}
       {tab === 'วันหยุด' && <ClosedDays closedDays={closedDays} setClosedDays={setClosedDays} notify={notify} confirm={confirm} />}
+      {tab === 'Sync' && <DeliverySync setExpenses={setExpenses} notify={notify} />}
       {tab === 'Export' && <Backup allOrders={allOrders} notify={notify} />}
 
       <Toast toast={toast} />
