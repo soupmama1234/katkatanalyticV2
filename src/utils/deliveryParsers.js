@@ -17,7 +17,11 @@ function parseGrabText(text) {
   const headerBlock = normalize(afterHeader.slice(0, blobMatch.index));
   const hasCommissionExtra = headerBlock.includes(normalize('ค่าคอมมิชชั่นเพิ่มเติม'));
   const hasAds = headerBlock.includes(normalize('ค่าธรรมเนียมการตลาด'));
-  const hasSubsidyAdj = headerBlock.includes(normalize('การปรับรายได้'));
+  // "การปรับรายได้" มี 2 แบบที่ขึ้นต้นเหมือนกัน: ตัวเดี่ยว (ปรับรายได้ทั่วไป เช่น refund) กับ
+  // "การปรับรายได้(ค่าคอมมิชชันไทยช่วยไทยพลัส)*" — แยกด้วยว่ามีวงเล็บต่อท้ายทันทีไหม
+  const hasSubsidyAdj = headerBlock.includes(normalize('การปรับรายได้') + '(');
+  const adjustmentCount = (headerBlock.match(new RegExp(normalize('การปรับรายได้'), 'g')) || []).length;
+  const hasGenericAdjustment = adjustmentCount > (hasSubsidyAdj ? 1 : 0);
 
   const numbers = blobMatch[0].match(/-?\d+\.\d{2}/g);
   let i = 0;
@@ -26,6 +30,7 @@ function parseGrabText(text) {
   const commissionExtra = hasCommissionExtra ? numbers[i++] : '0.00';
   const marketing = hasAds ? numbers[i++] : '0.00';
   i++; // ส่วนลดค่าจัดส่งโดยร้าน — ไม่ใช้ในการคำนวณ
+  const genericAdjustment = hasGenericAdjustment ? numbers[i++] : '0.00';
   const subsidyAdj = hasSubsidyAdj ? numbers[i++] : '0.00';
 
   const dateMatch = text.match(/(\d{1,2})\s+(กรกฎาคม|มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+(\d{4})/);
@@ -39,9 +44,13 @@ function parseGrabText(text) {
   }
   if (!date) return { error: 'ไม่พบวันที่ในอีเมล', raw: text.slice(0, 500) };
 
-  const gp = Math.abs(parseFloat(commission)) + Math.abs(parseFloat(commissionExtra));
-  const ads = Math.abs(parseFloat(marketing));
-  const subsidy = Math.abs(parseFloat(subsidyAdj));
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const gp = round2(Math.abs(parseFloat(commission)) + Math.abs(parseFloat(commissionExtra)));
+  const ads = round2(Math.abs(parseFloat(marketing)));
+  // รวมค่า "ปรับรายได้" ทั้ง 2 แบบ โดยคงเครื่องหมายบวก/ลบเดิมก่อนรวม (สำคัญ! ถ้า Math.abs ทีละตัวก่อนจะผิด
+  // เช่น +48.00 กับ -76.37 ต้องรวมเป็น -28.37 ก่อน แล้วค่อย Math.abs ทีเดียว ไม่ใช่บวกค่า absolute กัน)
+  const netSubsidyAdjustment = parseFloat(genericAdjustment) + parseFloat(subsidyAdj);
+  const subsidy = round2(Math.abs(netSubsidyAdjustment));
 
   const rows = [];
   if (gp > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP Grab', amount: gp, date, sync_key: `grab:${date}:gp` });

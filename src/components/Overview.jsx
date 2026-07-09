@@ -5,7 +5,7 @@ import {
 import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
 import {
-  filterByPeriod, filterByRange, computeStats,
+  filterByPeriod, filterByRange, filterExpByPeriod, filterExpByRange, computeStats,
   getOrderItems, fmt, todayStr, CHART_TIP
 } from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS } from '../utils/constants.js'
@@ -109,8 +109,8 @@ export default function Overview({ allOrders, closedDays = [], expenses = [] }) 
 
     const filteredExpenses =
       period === 'custom'
-        ? filterByRange(expenses, from, to)
-        : filterByPeriod(expenses, period)
+        ? filterExpByRange(expenses, from, to)
+        : filterExpByPeriod(expenses, period)
 
     for (const e of filteredExpenses) {
       const cat = (e.category || '').toLowerCase().trim()
