@@ -707,7 +707,7 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 ค้นหา..."
         style={{ ...INPUT, marginBottom: 12 }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-        <div style={MINI_CARD}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รวม</div><div style={{ color: 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>฿{fmt(total)}</div></div>
+       <div style={MINI_CARD}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รวม</div><div style={{ color: total < 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>฿{fmt(total)}</div></div>
         <div style={MINI_CARD}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รายการ</div><div style={{ fontWeight: 800 }}>{filtered.length}</div></div>
       </div>
 
