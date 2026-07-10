@@ -653,7 +653,7 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
     return rows
   }, [expenses, period, from, to, search])
 
-  const total = filtered.reduce((s, e) => s + (e.amount || 0), 0)
+  const total = filtered.reduce((s, e) => s + netAmount(e), 0)
 
   const handleDelete = async (id) => {
     const item = filtered.find(e => e.id === id)
