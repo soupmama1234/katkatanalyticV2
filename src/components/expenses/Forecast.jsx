@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { fmt, CHART_TIP } from '../../utils/helpers.js'
+import { fmt, CHART_TIP, netAmount } from '../../utils/helpers.js'
 import { EXP_CATS } from '../../utils/constants.js'
 
 // ── Weighted average พร้อม fallback ──────────────────────────────────────────
@@ -105,7 +105,7 @@ export default function Forecast({ expenses }) {
       if (!e.date || !e.amount) return
       const month = e.date.slice(0, 7)
       if (!map[month]) map[month] = { total: 0, byCategory: {}, byItem: {} }
-      const amt = parseFloat(e.amount) || 0
+      const amt = netAmount(e)
       map[month].total += amt
 
       const cat  = e.category || 'อื่นๆ'
@@ -359,7 +359,7 @@ export default function Forecast({ expenses }) {
                 </span>
               </div>
               <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pct}%`, background: catInfo?.color || 'var(--primary)', borderRadius: 2, transition: 'width 0.4s' }} />
+                <div style={{ height: '100%', width: `${Math.max(0, pct)}%`, background: catInfo?.color || 'var(--primary)', borderRadius: 2, transition: 'width 0.4s' }} />
               </div>
             </div>
           )

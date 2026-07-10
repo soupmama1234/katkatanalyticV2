@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
-import { filterByPeriod, filterByRange, filterExpByPeriod, filterExpByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP } from '../utils/helpers.js'
+import { filterByPeriod, filterByRange, filterExpByPeriod, filterExpByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP, netAmount } from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS, EXP_CATS, EXP_PERIODS } from '../utils/constants.js'
 
 
@@ -429,9 +429,9 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         const expForPeriod = period === 'custom'
           ? filterExpByRange(expenses, from, to)
           : filterExpByPeriod(expenses, period)
-        expForPeriod.filter(e => e.category !== 'ส่วนลด').forEach(e => {
+        expForPeriod.forEach(e => {
           const m = (e.date || '').slice(0, 7)
-          if (m) monthlyExp[m] = (monthlyExp[m] || 0) + (e.amount || 0)
+          if (m) monthlyExp[m] = (monthlyExp[m] || 0) + netAmount(e)
         })
         const months = [...new Set([...Object.keys(monthlyRev), ...Object.keys(monthlyExp)])].sort().slice(-12)
         const costChart = months.map(m => ({
@@ -439,7 +439,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           rev:    Math.round(monthlyRev[m] || 0),
           exp:    Math.round(monthlyExp[m] || 0),
         }))
-        const totalExpAll = expForPeriod.filter(e => e.category !== 'ส่วนลด').reduce((s, e) => s + (e.amount || 0), 0)
+        const totalExpAll = expForPeriod.reduce((s, e) => s + netAmount(e), 0)
         const profit = total - totalExpAll
         const margin = total > 0 ? Math.round(profit / total * 100) : null
 
@@ -829,8 +829,8 @@ function CompareTab({ allOrders, expenses }) {
           if (!orders.length) return { total: 0 }
           const dates = orders.map(o => (o.created_at || '').slice(0, 10)).filter(Boolean).sort()
           const from = dates[0], to = dates[dates.length - 1]
-          const filtered = expenses.filter(e => e.date && e.date >= from && e.date <= to && e.category !== 'ส่วนลด')
-          return { total: filtered.reduce((s, e) => s + (e.amount || 0), 0) }
+          const filtered = expenses.filter(e => e.date && e.date >= from && e.date <= to)
+          return { total: filtered.reduce((s, e) => s + netAmount(e), 0) }
         }
         const costA = getExpForOrders(ordersA); const costB = getExpForOrders(ordersB)
         const profA = statsA.total - costA.total; const profB = statsB.total - costB.total

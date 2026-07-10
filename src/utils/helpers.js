@@ -1,4 +1,9 @@
 export const fmt = (n) => (n || 0).toLocaleString('th-TH')
+// ยอดสุทธิของ expense — ถ้าเป็น category "ส่วนลด" ให้หักออกจากต้นทุน แทนที่จะบวกเพิ่ม
+export const netAmount = (e) => {
+  const amt = parseFloat(e.amount) || 0
+  return e.category === 'ส่วนลด' ? -amt : amt
+}
 
 export const todayStr = new Date().toLocaleDateString('en-CA')
 

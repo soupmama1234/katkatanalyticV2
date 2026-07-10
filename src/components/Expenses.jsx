@@ -3,7 +3,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContai
 import { supabase } from '../supabase.js'
 import {
   filterExpByPeriod, filterExpByRange,
-  fmt, todayStr, guessExpCategory, exportCSV, CHART_TIP} from '../utils/helpers.js'
+  fmt, todayStr, guessExpCategory, exportCSV, netAmount, CHART_TIP} from '../utils/helpers.js'
 import { EXP_CATS, UNIT_PRESETS, VENDORS, PLATFORMS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
@@ -301,7 +301,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <label style={{
-              display: 'flex', alignItems: 'center', jussetUserSetCattetCatrSetCatntent: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: 'linear-gradient(135deg,#1a2e1a,#162e16)', border: '1px solid #4caf5044',
               borderRadius: 14, padding: '14px', color: '#4caf50', fontWeight: 700, fontSize: 13,
               cursor: 'pointer', fontFamily: 'inherit',
@@ -653,7 +653,7 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
     return rows
   }, [expenses, period, from, to, search])
 
-  const total = filtered.reduce((s, e) => s + (e.amount || 0), 0)
+  const total = filtered.reduce((s, e) => s + netAmount(e), 0)
 
   const handleDelete = async (id) => {
     const item = filtered.find(e => e.id === id)
@@ -707,7 +707,7 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 ค้นหา..."
         style={{ ...INPUT, marginBottom: 12 }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-        <div style={MINI_CARD}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รวม</div><div style={{ color: 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>฿{fmt(total)}</div></div>
+       <div style={MINI_CARD}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รวม</div><div style={{ color: total < 0 ? 'var(--success)' : 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>฿{fmt(total)}</div></div>
         <div style={MINI_CARD}><div style={{ fontSize: 10, color: 'var(--dim)' }}>รายการ</div><div style={{ fontWeight: 800 }}>{filtered.length}</div></div>
       </div>
 
@@ -880,8 +880,12 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                  <div style={{ color: 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>-฿{fmt(e.amount)}</div>
-                  <button onClick={() => startEdit(e)} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 8px', color: 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✏️</button>
+                    <div style={{ color: e.category === 'ส่วนลด' ? 'var(--success)' : 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>
+                    {e.category === 'ส่วนลด' ? '+' : '-'}฿{fmt(e.amount)}
+                    </div>
+                      <button onClick={() => startEdit(e)} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 8px', color: 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      ✏️
+                      </button>
                 </div>
               </div>
             )}
