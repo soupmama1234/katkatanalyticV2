@@ -301,7 +301,7 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <label style={{
-              display: 'flex', alignItems: 'center', jussetUserSetCattetCatrSetCatntent: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               background: 'linear-gradient(135deg,#1a2e1a,#162e16)', border: '1px solid #4caf5044',
               borderRadius: 14, padding: '14px', color: '#4caf50', fontWeight: 700, fontSize: 13,
               cursor: 'pointer', fontFamily: 'inherit',
@@ -880,13 +880,14 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-  <div style={{ color: e.category === 'ส่วนลด' ? 'var(--success)' : 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>
-    {e.category === 'ส่วนลด' ? '+' : '-'}฿{fmt(e.amount)}
-  </div>
-  <button onClick={() => startEdit(e)} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 8px', color: 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-    ✏️
-  </button>
-</div>
+                    <div style={{ color: e.category === 'ส่วนลด' ? 'var(--success)' : 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>
+                    {e.category === 'ส่วนลด' ? '+' : '-'}฿{fmt(e.amount)}
+                    </div>
+                      <button onClick={() => startEdit(e)} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 8px', color: 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      ✏️
+                      </button>
+                </div>
+              </div>
             )}
           </div>
         )
