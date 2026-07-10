@@ -880,10 +880,11 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                  <div style={{ color: 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>-฿{fmt(e.amount)}</div>
+                  <div style={{ color: e.category === 'ส่วนลด' ? 'var(--success)' : 'var(--danger)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>
+                    {e.category === 'ส่วนลด' ? '+' : '-'}฿{fmt(e.amount)}
+                  </div>
                   <button onClick={() => startEdit(e)} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 8px', color: 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✏️</button>
                 </div>
-              </div>
             )}
           </div>
         )
