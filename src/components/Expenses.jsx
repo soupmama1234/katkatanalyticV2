@@ -3,7 +3,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContai
 import { supabase } from '../supabase.js'
 import {
   filterExpByPeriod, filterExpByRange,
-  fmt, todayStr, guessExpCategory, exportCSV, CHART_TIP} from '../utils/helpers.js'
+  fmt, todayStr, guessExpCategory, exportCSV, netAmount, CHART_TIP} from '../utils/helpers.js'
 import { EXP_CATS, UNIT_PRESETS, VENDORS, PLATFORMS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
