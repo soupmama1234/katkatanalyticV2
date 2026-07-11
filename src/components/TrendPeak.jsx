@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import PeriodBar from './ui/PeriodBar.jsx'
 import StatCard from './ui/StatCard.jsx'
-import { filterByPeriod, filterByRange, filterExpByPeriod, filterExpByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP, netAmount } from '../utils/helpers.js'
+import { filterByPeriod, filterByRange, filterExpByPeriod, filterExpByRange, computeStats, getOrderItems, fmt, todayStr, CHART_TIP } from '../utils/helpers.js'
 import { CH_COLOR, STANDARD_PERIODS, EXP_CATS, EXP_PERIODS } from '../utils/constants.js'
 
 
@@ -14,6 +14,58 @@ const DAY_NAMES_SHORT = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
 
 function isRealOrder(r) {
   return /\.\d{3,}/.test(r.created_at || '')
+}
+
+// ─── MTD (Month-to-date) helpers ──────────────────────────────────────────────
+// นับ MTD "ถึงเมื่อวาน" เสมอ เพราะวันนี้ข้อมูลยังไม่จบวัน จะทำให้ pace ดูแย่กว่าจริง
+// ถ้าวันนี้คือวันที่ 1 ของเดือน แปลว่ายังไม่มีวันที่จบสมบูรณ์ในเดือนนี้เลย → cutoffDay = 0
+function getMTDCutoffDay() {
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (yesterday.getMonth() !== now.getMonth() || yesterday.getFullYear() !== now.getFullYear()) {
+    return 0
+  }
+  return yesterday.getDate()
+}
+
+// คืนช่วงวันที่ 1 ถึง cutoffDay ของเดือนเป้าหมาย (yearOffset/monthOffset จากเดือนปัจจุบัน)
+// กันกรณีเดือนเป้าหมายสั้นกว่า (เช่น เทียบวันที่ 30 กับ ก.พ.) ด้วยการ cap ที่วันสุดท้ายของเดือนนั้น
+function getMTDRange(yearOffset, monthOffset) {
+  const cutoffDay = getMTDCutoffDay()
+  const now = new Date()
+  const targetYear  = now.getFullYear() + yearOffset
+  const targetMonth = now.getMonth() + monthOffset
+  const daysInTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+  const endDay = Math.min(cutoffDay, daysInTargetMonth)
+  const from = new Date(targetYear, targetMonth, 1)
+  const to   = endDay > 0 ? new Date(targetYear, targetMonth, endDay) : null
+  return { from, to, endDay, daysInTargetMonth, cutoffDay }
+}
+
+const MTD_OFFSETS = {
+  mtdThis:      [0, 0],
+  mtdLastMonth: [0, -1],
+  mtdLastYear:  [-1, 0],
+}
+
+// ── Run-rate projection: ประมาณการยอดเต็มเดือน จาก rate ที่ทำได้จริงถึงเมื่อวาน ──
+// หมายเหตุ: สมมติว่า rate การขายคงที่ตลอดเดือน และไม่รู้ล่วงหน้าว่าจะมีวันหยุดเพิ่มในช่วงที่เหลือของเดือน
+function getRunRateProjection(allOrders, closedDays = []) {
+  const { from, to, endDay, daysInTargetMonth } = getMTDRange(0, 0)
+  if (!to || endDay === 0) return null
+
+  const fromStr = from.toLocaleDateString('en-CA')
+  const toStr   = to.toLocaleDateString('en-CA')
+  const mtdOrders = filterByRange(allOrders, fromStr, toStr)
+  const mtdTotal  = mtdOrders.reduce((s, r) => s + (r.actual_amount || 0), 0)
+
+  const closedInMTD = (closedDays || []).filter(d => d.date >= fromStr && d.date <= toStr).length
+  const operatingDaysMTD = Math.max(1, endDay - closedInMTD)
+  const dailyRate = mtdTotal / operatingDaysMTD
+  const projectedTotal = Math.round(dailyRate * daysInTargetMonth)
+
+  return { mtdTotal, endDay, daysInTargetMonth, operatingDaysMTD, closedInMTD, dailyRate, projectedTotal }
 }
 
 function filterClosedByPeriod(closedDays, period, from, to) {
@@ -44,21 +96,10 @@ function filterClosedByPeriod(closedDays, period, from, to) {
 function TrendTab({ allOrders, expenses, closedDays = [] }) {
   const [period, setPeriod] = useState('7d')
   const [from, setFrom] = useState(todayStr)
-  const [to, setTo] = useState(todayStr)
-  const PLATFORM_STYLE = {
-    pos:      { color: '#A0A0A0' },
-    grab:     { color: '#00B14F' },
-    lineman:  { color: '#00C300' },
-    shopee:   { color: '#EE4D2D' },
-  }
+  const [to, setTo]     = useState(todayStr)
 
-  // ─────────────────────────────
-  // ORDERS
-  // ─────────────────────────────
   const orders = useMemo(() =>
-    period === 'custom'
-      ? filterByRange(allOrders, from, to)
-      : filterByPeriod(allOrders, period),
+    period === 'custom' ? filterByRange(allOrders, from, to) : filterByPeriod(allOrders, period),
     [allOrders, period, from, to]
   )
 
@@ -67,356 +108,175 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
     [closedDays, period, from, to]
   )
 
-  const closedSet = useMemo(
-    () => new Set(filteredClosed.map(d => d.date)),
-    [filteredClosed]
-  )
+  const s       = useMemo(() => computeStats(orders, filteredClosed), [orders, filteredClosed])
+  const total   = orders.reduce((sum, r) => sum + (r.actual_amount || 0), 0)
+  const avg     = orders.length ? Math.round(total / orders.length) : 0
+  const maxBill = orders.length ? Math.max(...orders.map(r => r.actual_amount || 0)) : 0
 
-  const s = useMemo(
-    () => computeStats(orders, filteredClosed),
-    [orders, filteredClosed]
-  )
-
-  const { total, avg, maxBill } = useMemo(() => {
-    const total = orders.reduce((sum, r) => sum + (r.actual_amount || 0), 0)
-    const avg = orders.length ? Math.round(total / orders.length) : 0
-    const maxBill = orders.length ? Math.max(...orders.map(r => r.actual_amount || 0)) : 0
-    return { total, avg, maxBill }
-  }, [orders])
-
-  // ─────────────────────────────
-  // PREV PERIOD
-  // ─────────────────────────────
   const { prevOrders, prevLabel } = useMemo(() => {
     const now = new Date()
-
     if (period === '7d') {
       const d1 = new Date(now); d1.setDate(d1.getDate() - 14)
       const d2 = new Date(now); d2.setDate(d2.getDate() - 7)
-      return {
-        prevOrders: allOrders.filter(r => {
-          const d = new Date(r.created_at)
-          return d >= d1 && d < d2
-        }),
-        prevLabel: '7 วันก่อน'
-      }
+      return { prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }), prevLabel: '7 วันก่อน' }
     }
-
     if (period === '30d') {
       const d1 = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const d2 = new Date(now.getFullYear(), now.getMonth(), 1)
-      return {
-        prevOrders: allOrders.filter(r => {
-          const d = new Date(r.created_at)
-          return d >= d1 && d < d2
-        }),
-        prevLabel: 'เดือนที่แล้ว'
-      }
+      return { prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }), prevLabel: 'เดือนที่แล้ว' }
     }
-
     if (period === '1y') {
       const d1 = new Date(now.getFullYear() - 1, 0, 1)
       const d2 = new Date(now.getFullYear(), 0, 1)
-      return {
-        prevOrders: allOrders.filter(r => {
-          const d = new Date(r.created_at)
-          return d >= d1 && d < d2
-        }),
-        prevLabel: 'ปีที่แล้ว'
-      }
+      return { prevOrders: allOrders.filter(r => { const d = new Date(r.created_at); return d >= d1 && d < d2 }), prevLabel: 'ปีที่แล้ว' }
     }
-
     return { prevOrders: [], prevLabel: '' }
   }, [allOrders, period])
 
-  const prevTotal = useMemo(
-    () => prevOrders.reduce((s, r) => s + (r.actual_amount || 0), 0),
-    [prevOrders]
-  )
+  const prevTotal = prevOrders.reduce((s, r) => s + (r.actual_amount || 0), 0)
+  const prevAvg   = prevOrders.length ? Math.round(prevTotal / prevOrders.length) : 0
+  const diff      = total - prevTotal
+  const pct       = prevTotal > 0 ? Math.round(diff / prevTotal * 100) : 0
 
-  const prevAvg = useMemo(
-    () => prevOrders.length ? Math.round(prevTotal / prevOrders.length) : 0,
-    [prevOrders, prevTotal]
-  )
+  const closedSet = useMemo(() => new Set(filteredClosed.map(d => d.date)), [filteredClosed])
 
-  const diff = total - prevTotal
-  const pct = prevTotal > 0 ? Math.round((diff / prevTotal) * 100) : 0
-
-  // ─────────────────────────────
-  // CHART DATA
-  // ─────────────────────────────
   const chartData = useMemo(() => {
     const sorted = Object.keys(s.dailyMap).sort()
-
     if (period === '1y') {
       const monthly = {}
-
-      sorted.forEach(d => {
-        const k = d.slice(0, 7)
-        monthly[k] = (monthly[k] || 0) + s.dailyMap[d]
+      sorted.forEach(d => { const k = d.slice(0, 7); monthly[k] = (monthly[k] || 0) + s.dailyMap[d] })
+      return Object.keys(monthly).sort().slice(-12).map(k => {
+        const [y, m] = k.split('-')
+        return { label: new Date(+y, +m - 1).toLocaleDateString('th-TH', { month: 'short', year: '2-digit' }), value: monthly[k] }
       })
-
-      return Object.keys(monthly)
-        .sort()
-        .slice(-12)
-        .map(k => {
-          const [y, m] = k.split('-')
-          return {
-            label: new Date(+y, +m - 1).toLocaleDateString('th-TH', {
-              month: 'short',
-              year: '2-digit'
-            }),
-            value: monthly[k]
-          }
-        })
     }
-
     const n = period === '7d' ? 7 : 30
-
-    return sorted.slice(-n).map(d => ({
-      label: d.split('-')[2],
-      value: s.dailyMap[d],
-      isClosed: closedSet.has(d)
-    }))
+    return sorted.slice(-n).map(d => ({ label: d.split('-')[2], value: s.dailyMap[d], isClosed: closedSet.has(d) }))
   }, [s.dailyMap, period, closedSet])
 
-  // ─────────────────────────────
-  // COST MAP (OPTIMIZED)
-  // ─────────────────────────────
-  const { adsByPlatform, gpByPlatform } = useMemo(() => {
-    const ads = {}
-    const gp = {}
-
-    const filteredExpenses =
-      period === 'custom'
-        ? filterExpByRange(expenses, from, to)
-        : filterExpByPeriod(expenses, period)
-
-    for (const e of filteredExpenses) {
-      const cat = (e.category || '').toLowerCase().trim()
-
-      let platform = (e.platform || 'pos').toLowerCase().trim()
-
-      if (platform.includes('grab')) platform = 'grab'
-      else if (platform.includes('line')) platform = 'lineman'
-      else if (platform.includes('shopee')) platform = 'shopee'
-      else platform = 'pos'
-
-      if (cat.includes('ads')) {
-        ads[platform] = (ads[platform] || 0) + (e.amount || 0)
-      }
-
-      if (cat.includes('gp')) {
-        gp[platform] = (gp[platform] || 0) + (e.amount || 0)
-      }
-    }
-
-    return { adsByPlatform: ads, gpByPlatform: gp }
-  }, [expenses, period, from, to])
-
-  // ─────────────────────────────
-  // PLATFORM
-  // ─────────────────────────────
-  const platforms = useMemo(() => {
-    return ['pos', 'grab', 'lineman', 'shopee']
-      .filter(k => (s.platformRev?.[k] || 0) > 0)
-      .map(k => {
-        const rev = s.platformRev?.[k] || 0
-        const ads = adsByPlatform[k] || 0
-        const gp = gpByPlatform[k] || 0
-
-        return {
-          key: k,
-          rev,
-          ads,
-          gp,
-          net: rev - ads - gp,
-          cnt: s.platformCnt?.[k] || 0,
-          transfer: s.platformTransfer?.[k] || 0,
-          subsidy: s.platformSubsidy?.[k] || 0,
-          cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
-        }
-      })
-  }, [s, adsByPlatform, gpByPlatform])
-
-  // ─────────────────────────────
-  // WEEKDAY
-  // ─────────────────────────────
-  const weekdayData = useMemo(() => {
-    return s.byWeekday.map((d, i) => ({
-      day: DAY_NAMES_SHORT[i],
-      avg: d.cnt ? Math.round(d.rev / d.cnt) : 0,
-      cnt: d.cnt,
+  // platforms — แยก transfer/subsidy/cash
+  const platforms = ['pos', 'grab', 'lineman', 'shopee']
+    .filter(k => s.platformRev[k] > 0)
+    .map(k => ({
+      key: k,
+      rev: s.platformRev[k],
+      cnt: s.platformCnt[k],
+      transfer: s.platformTransfer?.[k] || 0,
+      subsidy: s.platformSubsidy?.[k] || 0,
+      cash: k === 'pos' ? (s.posPayment?.cash || 0) : 0,
     }))
-  }, [s.byWeekday])
 
+  const weekdayData = s.byWeekday.map((d, i) => ({
+    day: DAY_NAMES_SHORT[i], avg: d.cnt ? Math.round(d.rev / d.cnt) : 0, cnt: d.cnt,
+  }))
   const maxWd = Math.max(...weekdayData.map(d => d.avg), 1)
 
-  // ─────────────────────────────
-  // UI
-  // ─────────────────────────────
   return (
     <div>
-      <PeriodBar
-        period={period}
-        onChange={setPeriod}
-        options={STANDARD_PERIODS}
-        from={from}
-        to={to}
-        onFromChange={setFrom}
-        onToChange={setTo}
-      />
+      <PeriodBar period={period} onChange={setPeriod} options={STANDARD_PERIODS}
+        from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
 
-      {/* SUMMARY */}
-<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-  <StatCard icon="💰" label="ยอดรวม" value={<span style={{ color: '#FF9F0A' }}>฿{fmt(total)}</span>} />
-  <StatCard icon="📊" label="เฉลี่ย/บิล" value={avg ? <span style={{ color: '#FF9F0A' }}>฿{fmt(avg)}</span> : '—'} />
-  <StatCard icon="🧾" label="จำนวนบิล" value={<span style={{ color: '#FFFFFF' }}>{fmt(orders.length)}</span>} />
-  <StatCard icon="🔝" label="บิลสูงสุด" value={maxBill ? <span style={{ color: '#FFFFFF' }}>฿{fmt(maxBill)}</span> : '—'} />
-</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+        <StatCard icon="💰" label="ยอดรวม"   value={`฿${fmt(total)}`}  color="var(--success)" />
+        <StatCard icon="📊" label="เฉลี่ย/บิล" value={avg ? `฿${fmt(avg)}` : '—'} />
+        <StatCard icon="🧾" label="จำนวนบิล"  value={fmt(orders.length)} />
+        <StatCard icon="🔝" label="บิลสูงสุด" value={maxBill ? `฿${fmt(maxBill)}` : '—'} />
+      </div>
 
-      {/* COMPARE */}
+      {(s.operatingDaysCount > 0 || s.closedInPeriodCount > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+          {[
+            { label: 'วันเปิดร้าน', value: s.operatingDaysCount, color: 'var(--success)' },
+            { label: 'วันหยุด',     value: s.closedInPeriodCount, color: '#FF453A' },
+            { label: 'เฉลี่ย/วันเปิด', value: s.dailyAvg ? `฿${fmt(s.dailyAvg)}` : '—', color: 'var(--primary)' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={S.miniCard}>
+              <div style={{ fontSize: 10, color: 'var(--dim)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontWeight: 800, fontSize: 15, color, fontFamily: "'Inter',sans-serif" }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {prevOrders.length > 0 && (
         <div style={S.card}>
-          <div style={S.cardTitle}>📊 เทียบกับ {prevLabel}</div>
-
+          <div style={S.cardTitle}>📊 เทียบกับ{prevLabel}</div>
           <div style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 11, color: 'var(--dim)' }}>ยอดรวม</div>
-              <div style={{
-                fontSize: 16,
-                fontWeight: 800,
-                color: diff >= 0 ? 'var(--success)' : 'var(--danger)'
-              }}>
+              <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Inter',sans-serif",
+                color: diff >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                 {diff >= 0 ? '▲' : '▼'} {Math.abs(pct)}%
               </div>
-              <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-                {prevLabel} ฿{fmt(prevTotal)}
-              </div>
+              <div style={{ fontSize: 10, color: 'var(--dim)' }}>{prevLabel} ฿{fmt(prevTotal)}</div>
             </div>
-
             <div style={{ flex: 1, borderLeft: '1px solid var(--border2)', paddingLeft: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--dim)' }}>เฉลี่ย/บิล</div>
-              <div style={{
-                fontSize: 16,
-                fontWeight: 800,
-                color: avg >= prevAvg ? 'var(--success)' : 'var(--danger)'
-              }}>
-                {prevAvg ? Math.abs(Math.round((avg - prevAvg) / prevAvg * 100)) : 0}%
+              <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Inter',sans-serif",
+                color: avg >= prevAvg ? 'var(--success)' : 'var(--danger)' }}>
+                {avg >= prevAvg ? '▲' : '▼'} {prevAvg > 0 ? Math.abs(Math.round((avg - prevAvg) / prevAvg * 100)) : 0}%
               </div>
-              <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-                {prevLabel} ฿{fmt(prevAvg)}
-              </div>
+              <div style={{ fontSize: 10, color: 'var(--dim)' }}>{prevLabel} ฿{fmt(prevAvg)}</div>
             </div>
           </div>
         </div>
       )}
 
-      {/* CHART */}
       <div style={S.card}>
         <div style={S.cardTitle}>แนวโน้มยอดขาย</div>
-
         <ResponsiveContainer width="100%" height={180}>
-          <LineChart data={chartData}>
+          <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
             <XAxis
               dataKey="label"
               tick={(props) => {
                 const { x, y, payload, index } = props
                 const isClosed = chartData[index]?.isClosed
                 return (
-                  <text x={x} y={y + 10} fontSize={10} textAnchor="middle">
+                  <text x={x} y={y + 10} fill={isClosed ? '#FF453A' : '#555'} fontSize={10} textAnchor="middle">
                     {payload.value}{isClosed ? '🔴' : ''}
                   </text>
                 )
               }}
             />
-            <YAxis />
-            <Tooltip />
-            <Line type="monotone" dataKey="value" stroke="var(--primary)" strokeWidth={2} />
+            <YAxis tick={{ fill: '#555', fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
+            <Tooltip {...CHART_TIP} formatter={v => [`฿${fmt(v)}`, 'ยอดขาย']} />
+            <Line type="monotone" dataKey="value" stroke="var(--primary)" strokeWidth={2} dot={{ r: 2 }} />
           </LineChart>
         </ResponsiveContainer>
+        {filteredClosed.length > 0 && (
+          <div style={{ fontSize: 10, color: '#FF453A', marginTop: 6, textAlign: 'center' }}>
+            🔴 = วันหยุด ({filteredClosed.length} วัน)
+          </div>
+        )}
       </div>
 
-      {/* PLATFORM */}
+      {/* Platform — แสดง 💵/📱/🏛️ แยก */}
       <div style={S.card}>
-        <div style={S.cardTitle}>📡 Platform</div>
-
+        <div style={S.cardTitle}>📡 Platform แยกช่วง</div>
         {platforms.map(p => {
-  const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
-
-  const color =
-    p.key === 'grab' ? '#00B14F' :
-    p.key === 'lineman' ? '#00A84F' :
-    p.key === 'shopee' ? '#EE4D2D' :
-    'var(--primary)'
-
-  return (
-    <div key={p.key} style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '10px 0',
-      borderBottom: '1px solid var(--border2)'
-    }}>
-
-      {/* LEFT */}
-      <div style={{ width: 70 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color }}>
-          {p.key.toUpperCase()}
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--dim)' }}>
-          {p.cnt} บิล
-        </div>
-      </div>
-
-      {/* MID BAR */}
-      <div style={{ flex: 1 }}>
-        <div style={{ height: 5, background: '#1a1a1a', borderRadius: 3 }}>
-          <div
-            style={{
-              width: `${pct}%`,
-              height: '100%',
-              background: color,
-              borderRadius: 3
-            }}
-          />
-        </div>
-
-        {/* ซ่อนไอคอนและตัวเลขพลาตฟอร์มที่ยอดเป็น 0 */}
-        <div style={{ fontSize: 10, marginTop: 5, color: 'var(--dim)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {p.cash > 0 && <span>💵 {fmt(p.cash)}</span>}
-          {p.transfer > 0 && <span>📱 {fmt(p.transfer)}</span>}
-          {p.subsidy > 0 && <span>🏛️ {fmt(p.subsidy)}</span>}
-        </div>
-      </div>
-
-      {/* RIGHT */}
-      <div style={{ textAlign: 'right', minWidth: 90 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color }}>
-          ฿{fmt(p.rev)}
-        </div>
-
-        {/* ซ่อน Ads และ GP ถ้าค่าเป็น 0 */}
-        {p.ads > 0 && (
-          <div style={{ fontSize: 10, color: '#FF453A' }}>
-            Ads -{fmt(p.ads)}
-          </div>
-        )}
-
-        {p.gp > 0 && (
-          <div style={{ fontSize: 10, color: '#FF9F0A' }}>
-            GP -{fmt(p.gp)}
-          </div>
-        )}
-
-        <div style={{ fontSize: 12, fontWeight: 800 }}>
-          Net {fmt(p.net)}
-        </div>
-      </div>
-    </div>
-  )
-})}
-        
+          const color = CH_COLOR[p.key] || '#888'
+          const pct = total > 0 ? Math.round(p.rev / total * 100) : 0
+          return (
+            <div key={p.key} style={S.row}>
+              <div style={{ width: 64, color, fontWeight: 700, fontSize: 13 }}>{p.key.toUpperCase()}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
+                </div>
+                <div style={{ marginTop: 5, fontSize: 10, color: 'var(--dim)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {p.cash > 0 && <span style={{ color: '#4caf50' }}>💵 ฿{fmt(p.cash)}</span>}
+                  {p.transfer > 0 && <span style={{ color: '#2196f3' }}>📱 ฿{fmt(p.transfer)}</span>}
+                  {p.subsidy > 0 && <span style={{ color: '#32D74B' }}>🏛️ ฿{fmt(p.subsidy)}</span>}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', minWidth: 90 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color }}> ฿{fmt(p.rev)}</div>
+                <div style={{ fontSize: 10, color: 'var(--dim)' }}>{p.cnt} บิล</div>
+              </div>
+            </div>
+          )
+        })}
+        {platforms.length === 0 && <div style={S.empty}>ยังไม่มีข้อมูล</div>}
       </div>
 
       {/* 💸 ต้นทุน vs รายรับ */}
@@ -429,9 +289,9 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
         const expForPeriod = period === 'custom'
           ? filterExpByRange(expenses, from, to)
           : filterExpByPeriod(expenses, period)
-        expForPeriod.forEach(e => {
+        expForPeriod.filter(e => e.category !== 'ส่วนลด').forEach(e => {
           const m = (e.date || '').slice(0, 7)
-          if (m) monthlyExp[m] = (monthlyExp[m] || 0) + netAmount(e)
+          if (m) monthlyExp[m] = (monthlyExp[m] || 0) + (e.amount || 0)
         })
         const months = [...new Set([...Object.keys(monthlyRev), ...Object.keys(monthlyExp)])].sort().slice(-12)
         const costChart = months.map(m => ({
@@ -439,7 +299,7 @@ function TrendTab({ allOrders, expenses, closedDays = [] }) {
           rev:    Math.round(monthlyRev[m] || 0),
           exp:    Math.round(monthlyExp[m] || 0),
         }))
-        const totalExpAll = expForPeriod.reduce((s, e) => s + netAmount(e), 0)
+        const totalExpAll = expForPeriod.filter(e => e.category !== 'ส่วนลด').reduce((s, e) => s + (e.amount || 0), 0)
         const profit = total - totalExpAll
         const margin = total > 0 ? Math.round(profit / total * 100) : null
 
@@ -632,12 +492,22 @@ const QUICK_PAIRS = [
   { key: 'quarter', a: 'thisQ',     b: 'lastQ'             },
   { key: 'year',    a: 'thisYear',  b: 'lastYear'          },
   { key: 'today',   a: 'today',     b: 'yesterday'         },
+  // ── MTD: เทียบ "จำนวนวันเท่ากัน" กันปัญหาเดือนนี้ผ่านมาไม่ครบเดือน ──
+  { key: 'mtd_lastmonth', a: 'mtdThis', b: 'mtdLastMonth' },
+  { key: 'mtd_yoy',       a: 'mtdThis', b: 'mtdLastYear'  },
 ]
 
 function getPeriodLabel(period, fromDate, toDate) {
   const now = new Date()
   const thLocale = 'th-TH'
   const opts = { month: 'long', year: 'numeric' }
+  if (period === 'mtdThis' || period === 'mtdLastMonth' || period === 'mtdLastYear') {
+    const [yOff, mOff] = MTD_OFFSETS[period]
+    const { from, to, endDay } = getMTDRange(yOff, mOff)
+    if (!to) return 'ยังไม่มีข้อมูล (เพิ่งเริ่มเดือน)'
+    const monthLabel = from.toLocaleDateString(thLocale, { month: 'short', year: 'numeric' })
+    return `1–${endDay} ${monthLabel} (ถึงเมื่อวาน)`
+  }
   if (period === 'today') return now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })
   if (period === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); return y.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' }) }
   if (period === '7d') { const d = new Date(now); d.setDate(d.getDate() - 7); return `${d.toLocaleDateString(thLocale, { day: 'numeric', month: 'short' })} – ${now.toLocaleDateString(thLocale, { day: 'numeric', month: 'short', year: 'numeric' })}` }
@@ -659,6 +529,12 @@ function getCompareOrders(allOrders, period) {
   const now = new Date()
   const toLocal = r => new Date(r.created_at).toLocaleDateString('en-CA')
   const todayS = now.toLocaleDateString('en-CA')
+  if (period === 'mtdThis' || period === 'mtdLastMonth' || period === 'mtdLastYear') {
+    const [yOff, mOff] = MTD_OFFSETS[period]
+    const { from, to } = getMTDRange(yOff, mOff)
+    if (!to) return []
+    return filterByRange(allOrders, from.toLocaleDateString('en-CA'), to.toLocaleDateString('en-CA'))
+  }
   if (period === 'today')     return allOrders.filter(r => toLocal(r) === todayS)
   if (period === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); return allOrders.filter(r => toLocal(r) === y.toLocaleDateString('en-CA')) }
   if (period === '7d') { const d = new Date(now); d.setDate(d.getDate() - 7); d.setHours(0,0,0,0); return allOrders.filter(r => new Date(r.created_at) >= d) }
@@ -759,7 +635,44 @@ function TopMenuCompare({ ordersA, ordersB, labelA, labelB }) {
   )
 }
 
-function CompareTab({ allOrders, expenses }) {
+// ── Run-rate projection card: ประมาณการยอดเต็มเดือนจาก pace ปัจจุบัน ──
+function RunRateCard({ allOrders, closedDays }) {
+  const proj = useMemo(() => getRunRateProjection(allOrders, closedDays), [allOrders, closedDays])
+
+  if (!proj) {
+    return (
+      <div style={S.card}>
+        <div style={S.cardTitle}>🔮 ประมาณการเดือนนี้ (Run-rate)</div>
+        <div style={S.empty}>ยังไม่มีวันที่จบสมบูรณ์ในเดือนนี้ (เพิ่งเริ่มเดือน)</div>
+      </div>
+    )
+  }
+
+  const { mtdTotal, endDay, daysInTargetMonth, operatingDaysMTD, closedInMTD, dailyRate, projectedTotal } = proj
+
+  return (
+    <div style={{ ...S.card, background: 'rgba(255,159,10,0.06)', border: '1px solid rgba(255,159,10,0.25)' }}>
+      <div style={S.cardTitle}>🔮 ประมาณการเดือนนี้ (Run-rate)</div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)' }}>ทำได้แล้ว ({endDay} วัน)</div>
+          <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 18, color: '#fff' }}>฿{fmt(mtdTotal)}</div>
+        </div>
+        <div style={{ flex: 1, borderLeft: '1px solid var(--border2)', paddingLeft: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)' }}>คาดว่าจบเดือนที่</div>
+          <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 800, fontSize: 18, color: 'var(--primary)' }}>฿{fmt(projectedTotal)}</div>
+        </div>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--dim)', lineHeight: 1.7 }}>
+        เฉลี่ย ฿{fmt(Math.round(dailyRate))}/วันเปิดร้าน ({operatingDaysMTD} วันเปิด{closedInMTD > 0 ? `, หยุด ${closedInMTD} วัน` : ''}) × {daysInTargetMonth} วันในเดือน
+        <br />
+        *สมมติ rate การขายคงที่ตลอดเดือน และไม่รวมวันหยุดที่อาจเกิดขึ้นในช่วงที่เหลือของเดือน — ใช้ดูแนวโน้มคร่าวๆ เท่านั้น
+      </div>
+    </div>
+  )
+}
+
+function CompareTab({ allOrders, expenses, closedDays = [] }) {
   const [quickPair, setQuickPair] = useState(0)
   const [modeA, setModeA] = useState('7d')
   const [modeB, setModeB] = useState('prev7d')
@@ -781,6 +694,8 @@ function CompareTab({ allOrders, expenses }) {
 
   return (
     <div>
+      <RunRateCard allOrders={allOrders} closedDays={closedDays} />
+
       <div style={S.card}>
         <div style={S.cardTitle}>⚡ เปรียบเทียบด่วน</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -829,8 +744,8 @@ function CompareTab({ allOrders, expenses }) {
           if (!orders.length) return { total: 0 }
           const dates = orders.map(o => (o.created_at || '').slice(0, 10)).filter(Boolean).sort()
           const from = dates[0], to = dates[dates.length - 1]
-          const filtered = expenses.filter(e => e.date && e.date >= from && e.date <= to)
-          return { total: filtered.reduce((s, e) => s + netAmount(e), 0) }
+          const filtered = expenses.filter(e => e.date && e.date >= from && e.date <= to && e.category !== 'ส่วนลด')
+          return { total: filtered.reduce((s, e) => s + (e.amount || 0), 0) }
         }
         const costA = getExpForOrders(ordersA); const costB = getExpForOrders(ordersB)
         const profA = statsA.total - costA.total; const profB = statsB.total - costB.total
@@ -874,7 +789,7 @@ export default function TrendPeak({ allOrders, expenses = [], closedDays = [] })
       </div>
       {sub === 'trend'   && <TrendTab   allOrders={allOrders} expenses={expenses} closedDays={closedDays} />}
       {sub === 'peak'    && <PeakTab    allOrders={allOrders} closedDays={closedDays} />}
-      {sub === 'compare' && <CompareTab allOrders={allOrders} expenses={expenses} />}
+      {sub === 'compare' && <CompareTab allOrders={allOrders} expenses={expenses} closedDays={closedDays} />}
     </div>
   )
 }
