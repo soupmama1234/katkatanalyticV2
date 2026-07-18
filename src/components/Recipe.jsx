@@ -192,37 +192,44 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
       )}
 
       {products.map(p => {
-        const ings = byProduct[p.id] || []
-        const { total: cost, hasUnknown } = calcRecipeCost(ings, priceMap)
-        const margin = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
-        const mgColor = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
-        return (
-          <div key={p.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {p.price && <span style={{ fontSize: 11, color: 'var(--dim)' }}>฿{p.price}</span>}
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: ings.length > 0 ? 'rgba(50,215,75,0.15)' : 'var(--surface2)', color: ings.length > 0 ? 'var(--success)' : 'var(--dim)' }}>
-                  {ings.length > 0 ? `${ings.length} วัตถุดิบ` : 'ยังไม่มีสูตร'}
-                </span>
-              </div>
-            </div>
-            {ings.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--dim)' }}>ต้นทุน: <span style={{ color: 'var(--danger)', fontWeight: 700 }}>฿{cost.toFixed(2)}{hasUnknown ? ' ⚠️' : ''}</span></span>
-                {margin !== null && <span style={{ fontSize: 13, fontWeight: 700, color: mgColor }}>Margin {margin}%</span>}
-              </div>
-            )}
-            <button onClick={() => openEdit(p)} style={{
-              width: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 10,
-              padding: '8px', color: ings.length > 0 ? 'var(--dim)' : 'var(--primary)',
-              fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            }}>
-              {ings.length > 0 ? '✏️ แก้ไขสูตร' : '+ เพิ่มสูตร'}
-            </button>
-          </div>
-        )
-      })}
+  const allIngs = byProduct[p.id] || []
+  const validIngs = allIngs.filter(r => r.ingredient_id)
+  const legacyCount = allIngs.length - validIngs.length
+  const { total: cost, hasUnknown } = calcRecipeCost(validIngs, priceMap)
+  const margin = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
+  const mgColor = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
+  return (
+    <div key={p.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {p.price && <span style={{ fontSize: 11, color: 'var(--dim)' }}>฿{p.price}</span>}
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: validIngs.length > 0 ? 'rgba(50,215,75,0.15)' : 'var(--surface2)', color: validIngs.length > 0 ? 'var(--success)' : 'var(--dim)' }}>
+            {validIngs.length > 0 ? `${validIngs.length} วัตถุดิบ` : 'ยังไม่มีสูตร'}
+          </span>
+        </div>
+      </div>
+      {legacyCount > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--primary)', marginBottom: 6, background: 'rgba(255,159,10,0.1)', padding: '4px 8px', borderRadius: 6 }}>
+          ⚠️ มีสูตรเก่า {legacyCount} รายการที่ยังไม่ได้ผูกวัตถุดิบ — กด "แก้ไขสูตร" เพื่ออัปเดต
+        </div>
+      )}
+      {validIngs.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--dim)' }}>ต้นทุน: <span style={{ color: 'var(--danger)', fontWeight: 700 }}>฿{cost.toFixed(2)}{hasUnknown ? ' ⚠️' : ''}</span></span>
+          {margin !== null && <span style={{ fontSize: 13, fontWeight: 700, color: mgColor }}>Margin {margin}%</span>}
+        </div>
+      )}
+      <button onClick={() => openEdit(p)} style={{
+        width: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 10,
+        padding: '8px', color: validIngs.length > 0 ? 'var(--dim)' : 'var(--primary)',
+        fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+      }}>
+        {validIngs.length > 0 ? '✏️ แก้ไขสูตร' : '+ เพิ่มสูตร'}
+      </button>
+    </div>
+  )
+})}
 
       {/* Modal */}
       {showModal && editProduct && (
@@ -307,9 +314,9 @@ function MarginAnalysis({ recipes, products, expenses }) {
   }, [recipes])
 
   const covered = useMemo(() =>
-    products.filter(p => (byProduct[p.id] || []).length > 0).length,
-    [byProduct, products]
-  )
+  products.filter(p => (byProduct[p.id] || []).some(r => r.ingredient_id)).length,
+  [byProduct, products]
+)
   const missing = products.length - covered
 
   const items = useMemo(() =>
