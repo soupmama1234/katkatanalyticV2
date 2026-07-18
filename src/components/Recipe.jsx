@@ -70,7 +70,12 @@ function IngredientPicker({ value, onChange, ingredients }) {
     <select
       value={value || ''}
       onChange={e => onChange(e.target.value ? Number(e.target.value) : '')}
-      style={{ ...INPUT, padding: '7px 10px', flex: 1 }}
+      style={{
+        flex: 1, appearance: 'none', WebkitAppearance: 'none',
+        background: `var(--surface2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 10px center`,
+        border: '1px solid var(--border2)', borderRadius: 10, padding: '9px 30px 9px 12px',
+        color: value ? '#fff' : 'var(--dim)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+      }}
     >
       <option value="">— เลือกวัตถุดิบ —</option>
       {ingredients.map(i => (
