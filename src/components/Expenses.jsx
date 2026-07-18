@@ -761,10 +761,20 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
     const item = filtered.find(e => e.id === id)
     const ok = await confirm(`ลบ "${item?.item || 'รายการนี้'}" ออกจากบันทึกต้นทุน?`)
     if (!ok) return
+
+    // คืน stock ถ้า expense นี้เคยผูก ingredient ไว้
+    if (item?.ingredient_id && item?.quantity && item?.stock_qty_per_purchase) {
+      const revertQty = item.quantity * item.stock_qty_per_purchase
+      const { data: ing } = await supabase.from('ingredients').select('stock_qty').eq('id', item.ingredient_id).single()
+      if (ing) {
+        await supabase.from('ingredients').update({ stock_qty: (ing.stock_qty || 0) - revertQty }).eq('id', item.ingredient_id)
+      }
+    }
+
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) return notify('ลบไม่สำเร็จ: ' + error.message, 'error')
     setExpenses(prev => prev.filter(e => e.id !== id))
-    notify('ลบรายการเรียบร้อย')
+    notify('ลบรายการเรียบร้อย' + (item?.ingredient_id ? ' (คืนสต็อกแล้ว)' : ''))
   }
 
   const startEdit = (e) => {
