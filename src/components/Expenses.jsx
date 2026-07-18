@@ -1,10 +1,10 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { supabase } from '../supabase.js'
 import {
   filterExpByPeriod, filterExpByRange,
   fmt, todayStr, guessExpCategory, exportCSV, netAmount, CHART_TIP} from '../utils/helpers.js'
-import { EXP_CATS, UNIT_PRESETS, VENDORS, PLATFORMS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS } from '../utils/constants.js'
+import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS, STOCK_UNIT_PRESETS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
 import { INPUT, MINI_CARD, Field, AutoComplete } from './expenses/shared.jsx'
@@ -63,6 +63,36 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
   // hint ราคาล่าสุด ที่ auto-fill มา
   const [lastPriceHint, setLastPriceHint] = useState(null) // { price_per_unit, unit, vendor, date }
 
+  // ── Ingredient linking (stock tracking) ──
+  const [ingredients, setIngredients] = useState([])
+  const [selectedIngredient, setSelectedIngredient] = useState(null)
+  const [stockQtyPerPurchase, setStockQtyPerPurchase] = useState('')
+  const [showNewIngredient, setShowNewIngredient] = useState(false)
+  const [newIngredientUnit, setNewIngredientUnit] = useState('')
+
+  useEffect(() => {
+    supabase.from('ingredients').select('*').order('name').then(({ data }) => setIngredients(data || []))
+  }, [])
+
+  const matchedIngredient = useMemo(() => {
+    if (!form.item.trim()) return null
+    return ingredients.find(i => i.name.toLowerCase() === form.item.trim().toLowerCase()) || null
+  }, [form.item, ingredients])
+
+  const handleCreateIngredient = async () => {
+    if (!newIngredientUnit.trim()) return notify('กรุณาใส่หน่วยนับสต็อก', 'warning')
+    try {
+      const { data, error } = await supabase.from('ingredients').insert({
+        name: form.item.trim(), stock_unit: newIngredientUnit.trim(), stock_qty: 0, track_stock: false,
+      }).select().single()
+      if (error) throw error
+      setIngredients(prev => [...prev, data])
+      setSelectedIngredient(data)
+      setShowNewIngredient(false)
+      notify(`✅ สร้างวัตถุดิบ "${data.name}" แล้ว`)
+    } catch (e) { notify('สร้างไม่สำเร็จ: ' + e.message, 'error') }
+  }
+
   const itemHistory   = useMemo(() => [...new Set(expenses.map(e => e.item).filter(Boolean))], [expenses])
   const vendorHistory = useMemo(() => [...new Set([...VENDORS, ...expenses.map(e => e.vendor).filter(Boolean)])], [expenses])
 
@@ -116,6 +146,8 @@ useEffect(() => {
 
   // ── handler เมื่อ user เลือก item จาก suggestion ──────────────────────────
   const handleItemSelect = (name) => {
+    setSelectedIngredient(null)
+    setStockQtyPerPurchase('')
     set('item', name)
     if (!userSetCat) set('category', guessExpCategory(name))
 
@@ -163,7 +195,6 @@ useEffect(() => {
         date: form.date || todayStr,
         item: form.item.trim(),
         category: form.category,
-        platform: form.platform || null,
         quantity: qty,
         unit: form.unit || null,
         price_per_unit: ppu,
@@ -171,15 +202,29 @@ useEffect(() => {
         vendor: form.vendor.trim() || null,
         payment_method: form.payment || null,
         note: form.note.trim() || null,
+        ingredient_id: selectedIngredient?.id || null,
+        stock_qty_per_purchase: selectedIngredient ? (parseFloat(stockQtyPerPurchase) || null) : null,
       }).select().single()
       if (error) throw error
+
+      if (selectedIngredient && qty && stockQtyPerPurchase) {
+        const addQty = qty * parseFloat(stockQtyPerPurchase)
+        const { error: stockErr } = await supabase.from('ingredients')
+          .update({ stock_qty: (selectedIngredient.stock_qty || 0) + addQty })
+          .eq('id', selectedIngredient.id)
+        if (!stockErr) setIngredients(prev => prev.map(i => i.id === selectedIngredient.id ? { ...i, stock_qty: (i.stock_qty || 0) + addQty } : i))
+      }
+
       setExpenses(prev => [data, ...prev])
       setForm(emptyForm)
       setUserSetCat(false)
       setLastPriceHint(null)
-    } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
-    setSaving(false)
-  }
+      setSelectedIngredient(null)
+      setStockQtyPerPurchase('')
+      
+      } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
+      setSaving(false)
+    }
 
   // OCR
   const handleOCR = async (file) => {
@@ -556,6 +601,63 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
             </div>
           )}
         </Field>
+
+        {form.item.trim() && (
+          <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--surface2)', borderRadius: 10, border: '1px dashed var(--border2)' }}>
+            <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 8 }}>
+              🔗 เชื่อมกับวัตถุดิบ (ไม่บังคับ — ใช้สำหรับนับสต็อก)
+            </div>
+            {selectedIngredient ? (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>✅ {selectedIngredient.name} ({selectedIngredient.stock_unit})</span>
+                  <button onClick={() => { setSelectedIngredient(null); setStockQtyPerPurchase('') }} style={{ background: 'none', border: 'none', color: 'var(--dim)', fontSize: 12, cursor: 'pointer' }}>เปลี่ยน</button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>
+                  1 {form.unit || 'หน่วยที่ซื้อ'} = กี่ {selectedIngredient.stock_unit}?
+                  {form.unit === selectedIngredient.stock_unit && <span style={{ color: 'var(--primary)' }}> (หน่วยเดียวกัน ใส่ 1)</span>}
+                </div>
+                <input type="number" inputMode="decimal" value={stockQtyPerPurchase} onChange={e => setStockQtyPerPurchase(e.target.value)}
+                  placeholder={`เช่น 1 ${form.unit || 'แผง'} = 30 ${selectedIngredient.stock_unit}`} style={{ ...INPUT, fontSize: 13 }} />
+              </div>
+            ) : showNewIngredient ? (
+              <div>
+                <div style={{ fontSize: 12, marginBottom: 6 }}>สร้างวัตถุดิบใหม่: <strong>{form.item}</strong></div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {STOCK_UNIT_PRESETS.map(u => (
+                    <button key={u} onClick={() => setNewIngredientUnit(u)} style={{
+                      padding: '5px 10px', borderRadius: 8, border: `1px solid ${newIngredientUnit === u ? 'var(--primary)' : 'var(--border2)'}`,
+                      background: newIngredientUnit === u ? 'rgba(255,159,10,0.15)' : 'var(--surface)',
+                      color: newIngredientUnit === u ? 'var(--primary)' : 'var(--dim)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>{u}</button>
+                  ))}
+                </div>
+                <input value={newIngredientUnit} onChange={e => setNewIngredientUnit(e.target.value)} placeholder="หน่วยนับสต็อก เช่น ฟอง" style={{ ...INPUT, fontSize: 13, marginBottom: 8 }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setShowNewIngredient(false)} style={{ flex: 1, padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'none', color: 'var(--dim)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 }}>ยกเลิก</button>
+                  <button onClick={handleCreateIngredient} style={{ flex: 2, padding: 8, borderRadius: 8, border: 'none', background: 'var(--primary)', color: '#000', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 }}>สร้าง</button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {matchedIngredient && (
+                  <button onClick={() => setSelectedIngredient(matchedIngredient)} style={{
+                    width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--primary)', background: 'rgba(255,159,10,0.1)',
+                    color: 'var(--primary)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, marginBottom: 6,
+                  }}>💡 พบวัตถุดิบชื่อตรงกัน: "{matchedIngredient.name}" — เลือกใช้</button>
+                )}
+                <select value="" onChange={e => { const ing = ingredients.find(i => i.id === Number(e.target.value)); if (ing) setSelectedIngredient(ing) }} style={{ ...INPUT, fontSize: 12, marginBottom: 6 }}>
+                  <option value="">— เลือกวัตถุดิบที่มีอยู่ —</option>
+                  {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.stock_unit})</option>)}
+                </select>
+                <button onClick={() => { setShowNewIngredient(true); setNewIngredientUnit('') }} style={{
+                  width: '100%', padding: 7, borderRadius: 8, border: '1px dashed var(--border2)', background: 'none',
+                  color: 'var(--dim)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12,
+                }}>+ สร้างวัตถุดิบใหม่จาก "{form.item}"</button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="จำนวน">
