@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, memo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
 import { supabase } from '../supabase.js'
 import { fmt } from '../utils/helpers.js'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
@@ -38,224 +38,156 @@ export default function Recipe({ recipes, setRecipes, products, expenses }) {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-// L1: build lookup map ครั้งเดียว — O(n) แทน O(n*m)
-function buildPPUMap(expenses) {
+// ราคาต่อหน่วยสต็อกของแต่ละ ingredient — ดึงจาก expense ล่าสุดที่ผูก ingredient_id นั้น
+function buildIngredientPriceMap(expenses) {
   const map = {}
-  // sort date desc → เจอแรก = ล่าสุด
   const sorted = [...expenses]
-    .filter(e => e.item && e.quantity && e.amount)
+    .filter(e => e.ingredient_id && e.quantity && e.amount && e.stock_qty_per_purchase)
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
   sorted.forEach(e => {
-    const key = e.item.toLowerCase()
-    if (!map[key]) {
-      map[key] = { ppu: e.amount / e.quantity, unit: e.unit || '', date: e.date, name: e.item }
+    if (map[e.ingredient_id]) return // เจอแรก = ล่าสุด (sort desc แล้ว)
+    const totalStockUnits = e.quantity * e.stock_qty_per_purchase
+    if (totalStockUnits > 0) {
+      map[e.ingredient_id] = { ppu: e.amount / totalStockUnits, date: e.date }
     }
   })
   return map
 }
 
-// lookup จาก map — O(1) per call
-function lookupPPU(ingredient, ppuMap) {
-  if (!ingredient) return null
-  const kw = ingredient.toLowerCase()
-  // exact match ก่อน
-  if (ppuMap[kw]) return ppuMap[kw]
-  // partial match
-  const key = Object.keys(ppuMap).find(k => k.includes(kw) || kw.includes(k))
-  return key ? ppuMap[key] : null
-}
-
-function calcRecipeCostFast(ings, ppuMap) {
+function calcRecipeCost(ings, priceMap) {
   let total = 0; let hasUnknown = false
   ings.forEach(ing => {
-    const info = lookupPPU(ing.ingredient, ppuMap)
+    const info = priceMap[ing.ingredient_id]
     if (info) total += info.ppu * ing.quantity
-    else if (ing.ingredient) hasUnknown = true
+    else if (ing.ingredient_id) hasUnknown = true
   })
   return { total, hasUnknown }
 }
-
-// ─── IngredientInput: input + autocomplete + debounce ────────────────────────
-// memo ป้องกัน re-render row อื่นเมื่อ row นึงพิมพ์
-const IngredientInput = memo(function IngredientInput({ value, onChange, onSelect, suggestions }) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState(value) // local state สำหรับ display
-  const debounceRef = useRef(null)
-
-  // sync ถ้า value เปลี่ยนจากข้างนอก (เช่นตอน openEdit)
-  const prevValue = useRef(value)
-  if (prevValue.current !== value) {
-    prevValue.current = value
-    setQuery(value)
-  }
-
-  // L2: debounce 150ms — filter suggestions แค่เมื่อหยุดพิมพ์
-  const handleChange = (e) => {
-    const v = e.target.value
-    setQuery(v)
-    setOpen(true)
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => onChange(v), 150)
-  }
-
-  const matches = useMemo(() => {
-    const kw = (query || '').trim().toLowerCase()
-    if (!kw) return []
-    return suggestions
-      .filter(s => s.toLowerCase().includes(kw))
-      .slice(0, 6)
-  }, [query, suggestions])
-
-  const handleSelect = useCallback((m) => {
-    setQuery(m)
-    setOpen(false)
-    if (onSelect) onSelect(m)
-    else onChange(m)
-  }, [onChange, onSelect])
-
+// ─── IngredientPicker: dropdown เลือกจาก ingredients master table ───────────
+function IngredientPicker({ value, onChange, ingredients }) {
   return (
-    <div style={{ position: 'relative', flex: 1 }}>
-      <input
-        value={query}
-        onChange={handleChange}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="ชื่อวัตถุดิบ"
-        style={{ ...INPUT, padding: '7px 10px' }}
-      />
-      {open && matches.length > 0 && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
-          background: '#1e1e1e', border: '1px solid #4D96FF44',
-          borderRadius: 10, marginTop: 4,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-          overflow: 'hidden',
-        }}>
-          <div style={{ padding: '5px 10px', fontSize: 9, color: '#4D96FF', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border2)' }}>
-            📌 จาก expenses
-          </div>
-          {matches.map(m => (
-            <div
-              key={m}
-              onMouseDown={() => handleSelect(m)}
-              style={{
-                padding: '9px 12px', fontSize: 13, cursor: 'pointer',
-                color: '#fff', borderBottom: '1px solid #2a2a2a',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = '#2a2a2a'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              {m}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <select
+      value={value || ''}
+      onChange={e => onChange(e.target.value ? Number(e.target.value) : '')}
+      style={{ ...INPUT, padding: '7px 10px', flex: 1 }}
+    >
+      <option value="">— เลือกวัตถุดิบ —</option>
+      {ingredients.map(i => (
+        <option key={i.id} value={i.id}>{i.name} ({i.stock_unit})</option>
+      ))}
+    </select>
   )
-})
+}
 
 // ─── Recipe List ──────────────────────────────────────────────────────────────
 function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }) {
+  const [ingredients, setIngredients] = useState([])
   const [showModal, setShowModal]   = useState(false)
-  const [editMenu, setEditMenu]     = useState('')
-  const [ingredients, setIngredients] = useState([{ ingredient: '', quantity: '', unit: '' }])
+  const [editProduct, setEditProduct] = useState(null)
+  const [rows, setRows] = useState([{ ingredient_id: '', quantity: '' }])
   const [saving, setSaving]         = useState(false)
 
-  // L1: build ppuMap ครั้งเดียวเมื่อ expenses เปลี่ยน
-  const ppuMap = useMemo(() => buildPPUMap(expenses), [expenses])
+  useEffect(() => {
+    supabase.from('ingredients').select('*').order('name').then(({ data }) => setIngredients(data || []))
+  }, [])
 
-  // รายชื่อวัตถุดิบ unique สำหรับ suggestions
-  const ingredientSuggestions = useMemo(() =>
-    [...new Set(expenses.map(e => e.item).filter(Boolean))],
-    [expenses]
-  )
+  const ingredientsMap = useMemo(() => {
+    const map = {}
+    ingredients.forEach(i => { map[i.id] = i })
+    return map
+  }, [ingredients])
 
-  // map ingredient → { quantity, unit } จากทุก recipes ที่บันทึกไว้
-  const recipeQtyMap = useMemo(() => {
+  const priceMap = useMemo(() => buildIngredientPriceMap(expenses), [expenses])
+
+  // group recipes ตาม product_id (เฉพาะที่ผูก product_id แล้ว)
+  const byProduct = useMemo(() => {
     const map = {}
     recipes.forEach(r => {
-      if (r.ingredient && r.quantity) {
-        const key = r.ingredient.toLowerCase()
-        if (!map[key]) map[key] = { quantity: r.quantity, unit: r.unit || '' }
-      }
+      if (!r.product_id) return
+      if (!map[r.product_id]) map[r.product_id] = []
+      map[r.product_id].push(r)
     })
     return map
   }, [recipes])
 
-  const byMenu = useMemo(() => {
-    const map = {}
-    recipes.forEach(r => { if (!map[r.menu_name]) map[r.menu_name] = []; map[r.menu_name].push(r) })
-    return map
-  }, [recipes])
-
   const covered = useMemo(() =>
-    Object.keys(byMenu).filter(name => products.some(p => p.name === name)).length,
-    [byMenu, products]
+    products.filter(p => (byProduct[p.id] || []).length > 0).length,
+    [byProduct, products]
   )
 
-  const openEdit = (menuName) => {
-    setEditMenu(menuName)
-    const existing = byMenu[menuName] || []
-    setIngredients(existing.length > 0
-      ? existing.map(r => ({ ingredient: r.ingredient, quantity: r.quantity, unit: r.unit || '' }))
-      : [{ ingredient: '', quantity: '', unit: '' }]
+  const openEdit = (product) => {
+    setEditProduct(product)
+    const existing = byProduct[product.id] || []
+    setRows(existing.length > 0
+      ? existing.map(r => ({ ingredient_id: r.ingredient_id, quantity: r.quantity }))
+      : [{ ingredient_id: '', quantity: '' }]
     )
     setShowModal(true)
   }
 
-  const addRow = useCallback(() =>
-    setIngredients(prev => [...prev, { ingredient: '', quantity: '', unit: '' }]), [])
-  const removeRow = useCallback((i) =>
-    setIngredients(prev => prev.filter((_, j) => j !== i)), [])
-  // L2: useCallback — stable ref ไม่ทำให้ IngredientInput re-render
-  const updateRow = useCallback((i, key, val) =>
-    setIngredients(prev => prev.map((r, j) => j === i ? { ...r, [key]: val } : r)), [])
+  const addRow = useCallback(() => setRows(prev => [...prev, { ingredient_id: '', quantity: '' }]), [])
+  const removeRow = useCallback((i) => setRows(prev => prev.filter((_, j) => j !== i)), [])
+  const updateRow = useCallback((i, key, val) => setRows(prev => prev.map((r, j) => j === i ? { ...r, [key]: val } : r)), [])
 
   const handleSave = async () => {
-    if (!editMenu) return notify('กรุณาเลือกเมนู', 'warning')
-    const rows = ingredients.filter(r => r.ingredient.trim() && parseFloat(r.quantity) > 0)
-    if (!rows.length) return notify('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 อย่าง', 'warning')
+    if (!editProduct) return notify('เกิดข้อผิดพลาด: ไม่พบเมนู', 'error')
+    const valid = rows.filter(r => r.ingredient_id && parseFloat(r.quantity) > 0)
+    if (!valid.length) return notify('กรุณาเพิ่มวัตถุดิบอย่างน้อย 1 อย่าง', 'warning')
     setSaving(true)
     try {
-      await supabase.from('recipes').delete().eq('menu_name', editMenu)
+      await supabase.from('recipes').delete().eq('product_id', editProduct.id)
       const { data, error } = await supabase.from('recipes').insert(
-        rows.map(r => ({ menu_name: editMenu, ingredient: r.ingredient.trim(), quantity: parseFloat(r.quantity), unit: r.unit || null, is_modifier: false, extra_price: 0 }))
+        valid.map(r => {
+          const ing = ingredientsMap[r.ingredient_id]
+          return {
+            product_id: editProduct.id,
+            ingredient_id: r.ingredient_id,
+            quantity: parseFloat(r.quantity),
+            unit: ing?.stock_unit || null,
+            menu_name: editProduct.name,      // snapshot สำรอง
+            ingredient: ing?.name || '',       // snapshot สำรอง
+            is_modifier: false,
+            extra_price: 0,
+          }
+        })
       ).select()
       if (error) throw error
-      setRecipes(prev => [...prev.filter(r => r.menu_name !== editMenu), ...(data || [])])
+      setRecipes(prev => [...prev.filter(r => r.product_id !== editProduct.id), ...(data || [])])
       setShowModal(false)
+      notify(`✅ บันทึกสูตร "${editProduct.name}" แล้ว`)
     } catch (e) { notify('บันทึกไม่สำเร็จ: ' + e.message, 'error') }
     setSaving(false)
   }
 
   const previewCost = useMemo(() => {
     let total = 0; let hasUnknown = false
-    ingredients.forEach(row => {
-      if (!row.ingredient || !parseFloat(row.quantity)) return
-      const info = lookupPPU(row.ingredient, ppuMap)
+    rows.forEach(row => {
+      if (!row.ingredient_id || !parseFloat(row.quantity)) return
+      const info = priceMap[row.ingredient_id]
       if (info) total += info.ppu * parseFloat(row.quantity)
       else hasUnknown = true
     })
     return { total, hasUnknown }
-  }, [ingredients, ppuMap])
+  }, [rows, priceMap])
 
-  const selectedProduct = products.find(p => p.name === editMenu)
-  const sellPrice = selectedProduct?.price || 0
+  const sellPrice = editProduct?.price || 0
   const previewMargin = sellPrice && previewCost.total > 0 ? Math.round((sellPrice - previewCost.total) / sellPrice * 100) : null
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: 'var(--dim)' }}>มีสูตรแล้ว {covered}/{products.length} เมนู</div>
-        <button onClick={() => { setEditMenu(''); setIngredients([{ ingredient: '', quantity: '', unit: '' }]); setShowModal(true) }}
-          style={{ background: 'var(--primary)', color: '#000', border: 'none', borderRadius: 12, padding: '8px 16px', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          + เพิ่มสูตร
-        </button>
       </div>
 
+      {ingredients.length === 0 && (
+        <div style={{ background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.25)', borderRadius: 12, padding: '12px 14px', marginBottom: 14, fontSize: 12, color: 'var(--primary)' }}>
+          ⚠️ ยังไม่มีวัตถุดิบในระบบ — ไปสร้างที่แท็บ "วัตถุดิบ" ก่อน แล้วค่อยกลับมาทำสูตร
+        </div>
+      )}
+
       {products.map(p => {
-        const ings = byMenu[p.name] || []
-        const { total: cost, hasUnknown } = calcRecipeCostFast(ings, ppuMap)
+        const ings = byProduct[p.id] || []
+        const { total: cost, hasUnknown } = calcRecipeCost(ings, priceMap)
         const margin = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
         const mgColor = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
         return (
@@ -275,7 +207,7 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                 {margin !== null && <span style={{ fontSize: 13, fontWeight: 700, color: mgColor }}>Margin {margin}%</span>}
               </div>
             )}
-            <button onClick={() => openEdit(p.name)} style={{
+            <button onClick={() => openEdit(p)} style={{
               width: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 10,
               padding: '8px', color: ings.length > 0 ? 'var(--dim)' : 'var(--primary)',
               fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -287,50 +219,32 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
       })}
 
       {/* Modal */}
-      {showModal && (
+      {showModal && editProduct && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
           onClick={e => e.target === e.currentTarget && setShowModal(false)}>
           <div style={{ background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '20px', width: '100%', maxWidth: 500, maxHeight: '85vh', overflowY: 'auto', border: '1px solid var(--border2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{editMenu ? `สูตร: ${editMenu}` : 'เพิ่มสูตรอาหาร'}</div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>สูตร: {editProduct.name}</div>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--dim)', fontSize: 22, cursor: 'pointer' }}>✕</button>
             </div>
-
-            {!editMenu && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>เลือกเมนู</div>
-                <select value={editMenu} onChange={e => setEditMenu(e.target.value)} style={{ ...INPUT }}>
-                  <option value="">เลือกเมนู...</option>
-                  {products.map(p => <option key={p.id} value={p.name}>{p.name} (฿{p.price})</option>)}
-                </select>
-              </div>
-            )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>🥩 วัตถุดิบ</div>
               <button onClick={addRow} style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '5px 12px', color: 'var(--primary)', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ เพิ่ม</button>
             </div>
 
-            {ingredients.map((row, i) => {
-              const info = row.ingredient ? lookupPPU(row.ingredient, ppuMap) : null
+            {rows.map((row, i) => {
+              const info = row.ingredient_id ? priceMap[row.ingredient_id] : null
+              const ing = row.ingredient_id ? ingredientsMap[row.ingredient_id] : null
               const qty = parseFloat(row.quantity) || 0
               const rowCost = info && qty ? info.ppu * qty : null
               return (
                 <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: 6, marginBottom: 4 }}>
-                    {/* ── IngredientInput แทน plain input ── */}
-                    <IngredientInput
-                      value={row.ingredient}
-                      onChange={val => updateRow(i, 'ingredient', val)}
-                      onSelect={val => {
-                        updateRow(i, 'ingredient', val)
-                        const info = recipeQtyMap[val.toLowerCase()]
-                        if (info && !parseFloat(row.quantity)) {
-                          updateRow(i, 'quantity', String(info.quantity))
-                          updateRow(i, 'unit', info.unit)
-                        }
-                      }}
-                      suggestions={ingredientSuggestions}
+                    <IngredientPicker
+                      value={row.ingredient_id}
+                      onChange={val => updateRow(i, 'ingredient_id', val)}
+                      ingredients={ingredients}
                     />
                     <input type="number" value={row.quantity} onChange={e => updateRow(i, 'quantity', e.target.value)}
                       placeholder="0" style={{ ...INPUT, padding: '7px 8px', textAlign: 'center' }} />
@@ -338,8 +252,8 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
                   </div>
                   <div style={{ fontSize: 11, color: info ? 'var(--success)' : 'var(--dim)' }}>
                     {info
-                      ? `฿${info.ppu.toFixed(2)}/${info.unit || 'หน่วย'}${rowCost ? ` → ฿${rowCost.toFixed(2)}` : ''}`
-                      : row.ingredient ? '⚠️ ไม่พบราคาใน expenses' : 'กรอกชื่อวัตถุดิบ'
+                      ? `฿${info.ppu.toFixed(2)}/${ing?.stock_unit || 'หน่วย'}${rowCost ? ` → ฿${rowCost.toFixed(2)}` : ''}`
+                      : row.ingredient_id ? '⚠️ ยังไม่มีราคา — ไปบันทึกต้นทุนที่ผูกวัตถุดิบนี้ก่อน' : 'เลือกวัตถุดิบ'
                     }
                   </div>
                 </div>
@@ -374,32 +288,35 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
 
 // ─── Margin Analysis ──────────────────────────────────────────────────────────
 function MarginAnalysis({ recipes, products, expenses }) {
-  // L1: build map ครั้งเดียว
-  const ppuMap = useMemo(() => buildPPUMap(expenses), [expenses])
+  const priceMap = useMemo(() => buildIngredientPriceMap(expenses), [expenses])
 
-  const byMenu = useMemo(() => {
+  const byProduct = useMemo(() => {
     const map = {}
-    recipes.forEach(r => { if (!map[r.menu_name]) map[r.menu_name] = []; map[r.menu_name].push(r) })
+    recipes.forEach(r => {
+      if (!r.product_id) return
+      if (!map[r.product_id]) map[r.product_id] = []
+      map[r.product_id].push(r)
+    })
     return map
   }, [recipes])
 
   const covered = useMemo(() =>
-    Object.keys(byMenu).filter(name => products.some(p => p.name === name)).length,
-    [byMenu, products]
+    products.filter(p => (byProduct[p.id] || []).length > 0).length,
+    [byProduct, products]
   )
   const missing = products.length - covered
 
   const items = useMemo(() =>
-    Object.entries(byMenu)
-      .filter(([menu]) => products.some(p => p.name === menu))
-      .map(([menu, ings]) => {
-        const { total: cost, hasUnknown } = calcRecipeCostFast(ings, ppuMap)
-        const p = products.find(x => x.name === menu)
-        const sellPrice = p?.price || 0
+    products
+      .filter(p => (byProduct[p.id] || []).length > 0)
+      .map(p => {
+        const ings = byProduct[p.id]
+        const { total: cost, hasUnknown } = calcRecipeCost(ings, priceMap)
+        const sellPrice = p.price || 0
         const margin = sellPrice && cost > 0 ? (sellPrice - cost) / sellPrice * 100 : null
-        return { menu, cost, sellPrice, margin, hasUnknown }
+        return { menu: p.name, cost, sellPrice, margin, hasUnknown }
       }).sort((a, b) => (a.margin ?? 999) - (b.margin ?? 999)),
-    [byMenu, ppuMap, products]
+    [byProduct, priceMap, products]
   )
 
   return (
