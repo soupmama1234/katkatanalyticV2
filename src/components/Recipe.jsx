@@ -104,10 +104,6 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   }, [ingredients])
 
   const priceMap = useMemo(() => buildIngredientPriceMap(expenses), [expenses])
-
-
-  const priceMap = useMemo(() => buildIngredientPriceMap(expenses), [expenses])
-
   // group recipes ตาม product_id (เฉพาะที่ผูก product_id แล้ว)
   const byProduct = useMemo(() => {
     const map = {}
