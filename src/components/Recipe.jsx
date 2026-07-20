@@ -123,7 +123,11 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
     setEditProduct(product)
     const existing = byProduct[product.id] || []
     setRows(existing.length > 0
-      ? existing.map(r => ({ ingredient_id: r.ingredient_id, quantity: r.quantity }))
+      ? existing.map(r => ({
+          ingredient_id: r.ingredient_id,
+          quantity: r.quantity,
+          legacyName: !r.ingredient_id ? r.ingredient : null,
+        }))
       : [{ ingredient_id: '', quantity: '' }]
     )
     setShowModal(true)
@@ -251,6 +255,11 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
               const rowCost = info && qty ? info.ppu * qty : null
               return (
                 <div key={i} style={{ background: 'var(--surface2)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, border: '1px solid var(--border2)' }}>
+                  {row.legacyName && !row.ingredient_id && (
+                    <div style={{ fontSize: 11, color: 'var(--primary)', marginBottom: 6 }}>
+                      💭 สูตรเดิมคือ: <strong>{row.legacyName}</strong> — เลือกวัตถุดิบที่ตรงกัน หรือสร้างใหม่ที่แท็บ "วัตถุดิบ"
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: 6, marginBottom: 4 }}>
                     <IngredientPicker
                       value={row.ingredient_id}
