@@ -4,7 +4,7 @@ import { supabase } from '../supabase.js'
 import {
   filterExpByPeriod, filterExpByRange,
   fmt, todayStr, guessExpCategory, exportCSV, netAmount, CHART_TIP} from '../utils/helpers.js'
-import { EXP_CATS, UNIT_PRESETS, VENDORS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS, STOCK_UNIT_PRESETS } from '../utils/constants.js'
+import { EXP_CATS, UNIT_PRESETS, VENDORS, PLATFORMS, GEMINI_MODEL, ACTION_CAT_LABEL, ACTION_CAT_COLOR, EXP_PERIODS, STOCK_UNIT_PRESETS } from '../utils/constants.js'
 import PeriodBar from './ui/PeriodBar.jsx'
 import { useNotify, Toast, ConfirmDialog } from './ui/Toast.jsx'
 import { INPUT, MINI_CARD, Field, AutoComplete } from './expenses/shared.jsx'
@@ -195,6 +195,7 @@ useEffect(() => {
         date: form.date || todayStr,
         item: form.item.trim(),
         category: form.category,
+        platform: form.platform || null,
         quantity: qty,
         unit: form.unit || null,
         price_per_unit: ppu,
