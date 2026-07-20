@@ -10,7 +10,7 @@ const INPUT = {
   fontFamily: 'inherit', boxSizing: 'border-box',
 }
 
-const TABS = ['สูตรอาหาร', 'วิเคราะห์ Margin']
+const TABS = ['สูตรอาหาร', 'วิเคราะห์ Margin', 'วัตถุดิบ']
 
 export default function Recipe({ recipes, setRecipes, products, expenses }) {
   const [tab, setTab] = useState('สูตรอาหาร')
@@ -30,6 +30,7 @@ export default function Recipe({ recipes, setRecipes, products, expenses }) {
       </div>
       {tab === 'สูตรอาหาร'     && <RecipeList recipes={recipes} setRecipes={setRecipes} products={products} expenses={expenses} notify={notify} confirm={confirm} />}
       {tab === 'วิเคราะห์ Margin' && <MarginAnalysis recipes={recipes} products={products} expenses={expenses} />}
+      {tab === 'วัตถุดิบ'      && <IngredientManager notify={notify} confirm={confirm} />}
       <Toast toast={toast} />
       <ConfirmDialog dialog={dialog} onConfirm={handleConfirm} />
     </div>
@@ -69,7 +70,12 @@ function IngredientPicker({ value, onChange, ingredients }) {
     <select
       value={value || ''}
       onChange={e => onChange(e.target.value ? Number(e.target.value) : '')}
-      style={{ ...INPUT, padding: '7px 10px', flex: 1 }}
+      style={{
+        flex: 1, appearance: 'none', WebkitAppearance: 'none',
+        background: `var(--surface2) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 10px center`,
+        border: '1px solid var(--border2)', borderRadius: 10, padding: '9px 30px 9px 12px',
+        color: value ? '#fff' : 'var(--dim)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+      }}
     >
       <option value="">— เลือกวัตถุดิบ —</option>
       {ingredients.map(i => (
@@ -98,12 +104,10 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   }, [ingredients])
 
   const priceMap = useMemo(() => buildIngredientPriceMap(expenses), [expenses])
-
   // group recipes ตาม product_id (เฉพาะที่ผูก product_id แล้ว)
   const byProduct = useMemo(() => {
     const map = {}
     recipes.forEach(r => {
-      if (!r.product_id) return
       if (!map[r.product_id]) map[r.product_id] = []
       map[r.product_id].push(r)
     })
@@ -186,37 +190,44 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
       )}
 
       {products.map(p => {
-        const ings = byProduct[p.id] || []
-        const { total: cost, hasUnknown } = calcRecipeCost(ings, priceMap)
-        const margin = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
-        const mgColor = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
-        return (
-          <div key={p.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {p.price && <span style={{ fontSize: 11, color: 'var(--dim)' }}>฿{p.price}</span>}
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: ings.length > 0 ? 'rgba(50,215,75,0.15)' : 'var(--surface2)', color: ings.length > 0 ? 'var(--success)' : 'var(--dim)' }}>
-                  {ings.length > 0 ? `${ings.length} วัตถุดิบ` : 'ยังไม่มีสูตร'}
-                </span>
-              </div>
-            </div>
-            {ings.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--dim)' }}>ต้นทุน: <span style={{ color: 'var(--danger)', fontWeight: 700 }}>฿{cost.toFixed(2)}{hasUnknown ? ' ⚠️' : ''}</span></span>
-                {margin !== null && <span style={{ fontSize: 13, fontWeight: 700, color: mgColor }}>Margin {margin}%</span>}
-              </div>
-            )}
-            <button onClick={() => openEdit(p)} style={{
-              width: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 10,
-              padding: '8px', color: ings.length > 0 ? 'var(--dim)' : 'var(--primary)',
-              fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            }}>
-              {ings.length > 0 ? '✏️ แก้ไขสูตร' : '+ เพิ่มสูตร'}
-            </button>
-          </div>
-        )
-      })}
+  const allIngs = byProduct[p.id] || []
+  const validIngs = allIngs.filter(r => r.ingredient_id)
+  const legacyCount = allIngs.length - validIngs.length
+  const { total: cost, hasUnknown } = calcRecipeCost(validIngs, priceMap)
+  const margin = p.price && cost > 0 ? Math.round((p.price - cost) / p.price * 100) : null
+  const mgColor = margin === null ? 'var(--dim)' : margin >= 60 ? 'var(--success)' : margin >= 40 ? 'var(--primary)' : 'var(--danger)'
+  return (
+    <div key={p.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {p.price && <span style={{ fontSize: 11, color: 'var(--dim)' }}>฿{p.price}</span>}
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: validIngs.length > 0 ? 'rgba(50,215,75,0.15)' : 'var(--surface2)', color: validIngs.length > 0 ? 'var(--success)' : 'var(--dim)' }}>
+            {validIngs.length > 0 ? `${validIngs.length} วัตถุดิบ` : 'ยังไม่มีสูตร'}
+          </span>
+        </div>
+      </div>
+      {legacyCount > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--primary)', marginBottom: 6, background: 'rgba(255,159,10,0.1)', padding: '4px 8px', borderRadius: 6 }}>
+          ⚠️ มีสูตรเก่า {legacyCount} รายการที่ยังไม่ได้ผูกวัตถุดิบ — กด "แก้ไขสูตร" เพื่ออัปเดต
+        </div>
+      )}
+      {validIngs.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--dim)' }}>ต้นทุน: <span style={{ color: 'var(--danger)', fontWeight: 700 }}>฿{cost.toFixed(2)}{hasUnknown ? ' ⚠️' : ''}</span></span>
+          {margin !== null && <span style={{ fontSize: 13, fontWeight: 700, color: mgColor }}>Margin {margin}%</span>}
+        </div>
+      )}
+      <button onClick={() => openEdit(p)} style={{
+        width: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 10,
+        padding: '8px', color: validIngs.length > 0 ? 'var(--dim)' : 'var(--primary)',
+        fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+      }}>
+        {validIngs.length > 0 ? '✏️ แก้ไขสูตร' : '+ เพิ่มสูตร'}
+      </button>
+    </div>
+  )
+})}
 
       {/* Modal */}
       {showModal && editProduct && (
@@ -301,9 +312,9 @@ function MarginAnalysis({ recipes, products, expenses }) {
   }, [recipes])
 
   const covered = useMemo(() =>
-    products.filter(p => (byProduct[p.id] || []).length > 0).length,
-    [byProduct, products]
-  )
+  products.filter(p => (byProduct[p.id] || []).some(r => r.ingredient_id)).length,
+  [byProduct, products]
+)
   const missing = products.length - covered
 
   const items = useMemo(() =>
@@ -351,6 +362,200 @@ function MarginAnalysis({ recipes, products, expenses }) {
         )
       })}
       {items.length === 0 && <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '30px 0' }}>ยังไม่มีสูตรอาหาร</div>}
+    </div>
+  )
+}
+
+// ─── Ingredient Manager ────────────────────────────────────────────────────
+const STOCK_UNIT_PRESETS = ['ชิ้น', 'ฟอง', 'ขวด', 'กระป๋อง', 'กก.', 'g', 'ลิตร', 'แพ็ค']
+
+function IngredientManager({ notify, confirm }) {
+  const [ingredients, setIngredients] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [form, setForm] = useState({ name: '', stock_unit: '', stock_qty: '' })
+  const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editQty, setEditQty] = useState('')
+
+  const fetchIngredients = async () => {
+    setLoading(true)
+    const { data, error } = await supabase.from('ingredients').select('*').order('name')
+    if (error) notify('โหลดวัตถุดิบไม่สำเร็จ: ' + error.message, 'error')
+    setIngredients(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchIngredients() }, []) // run once on mount via lazy init pattern below
+  // (replaced by useEffect below in actual file)
+
+  const handleAdd = async () => {
+    if (!form.name.trim()) return notify('กรุณาใส่ชื่อวัตถุดิบ', 'warning')
+    if (!form.stock_unit.trim()) return notify('กรุณาใส่หน่วยนับสต็อก', 'warning')
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.from('ingredients').insert({
+        name: form.name.trim(),
+        stock_unit: form.stock_unit.trim(),
+        stock_qty: parseFloat(form.stock_qty) || 0,
+        track_stock: false,
+      }).select().single()
+      if (error) throw error
+      setIngredients(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name, 'th')))
+      setForm({ name: '', stock_unit: '', stock_qty: '' })
+      notify(`✅ เพิ่ม "${data.name}" เรียบร้อย`)
+    } catch (e) {
+      notify('เพิ่มไม่สำเร็จ: ' + e.message, 'error')
+    }
+    setSaving(false)
+  }
+
+  const toggleTrackStock = async (ing) => {
+    const next = !ing.track_stock
+    setIngredients(prev => prev.map(i => i.id === ing.id ? { ...i, track_stock: next } : i))
+    try {
+      const { error } = await supabase.from('ingredients').update({ track_stock: next }).eq('id', ing.id)
+      if (error) throw error
+      notify(`${next ? '✅ เปิด' : '⏸️ ปิด'} การหักสต็อก "${ing.name}" แล้ว`)
+    } catch (e) {
+      setIngredients(prev => prev.map(i => i.id === ing.id ? { ...i, track_stock: ing.track_stock } : i))
+      notify('เปลี่ยนสถานะไม่สำเร็จ: ' + e.message, 'error')
+    }
+  }
+
+  const startEditQty = (ing) => {
+    setEditingId(ing.id)
+    setEditQty(String(ing.stock_qty ?? 0))
+  }
+
+  const saveEditQty = async (ing) => {
+    const val = parseFloat(editQty)
+    if (isNaN(val)) return notify('กรุณาใส่ตัวเลข', 'warning')
+    try {
+      const { error } = await supabase.from('ingredients').update({ stock_qty: val }).eq('id', ing.id)
+      if (error) throw error
+      setIngredients(prev => prev.map(i => i.id === ing.id ? { ...i, stock_qty: val } : i))
+      setEditingId(null)
+      notify('ปรับสต็อกเรียบร้อย')
+    } catch (e) {
+      notify('บันทึกไม่สำเร็จ: ' + e.message, 'error')
+    }
+  }
+
+  const handleDelete = async (ing) => {
+    const ok = await confirm(`ลบวัตถุดิบ "${ing.name}"?\n(หากมีสูตรอาหารผูกอยู่ อาจกระทบการคำนวณต้นทุน)`)
+    if (!ok) return
+    try {
+      const { error } = await supabase.from('ingredients').delete().eq('id', ing.id)
+      if (error) throw error
+      setIngredients(prev => prev.filter(i => i.id !== ing.id))
+      notify(`🗑️ ลบ "${ing.name}" แล้ว`)
+    } catch (e) {
+      notify('ลบไม่สำเร็จ: ' + e.message, 'error')
+    }
+  }
+
+  if (loading) return <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '30px 0' }}>⏳ กำลังโหลด...</div>
+
+  return (
+    <div>
+      {/* Add form */}
+      <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 14, marginBottom: 14, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🥩 เพิ่มวัตถุดิบใหม่</div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>ชื่อวัตถุดิบ</div>
+          <input
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="เช่น ไข่ไก่"
+            style={INPUT}
+          />
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>
+            หน่วยนับสต็อก <span style={{ color: 'var(--dim)', fontWeight: 400 }}>(หน่วยที่ใช้จริงตอนขาย เช่น ฟอง, ชิ้น — ไม่ใช่หน่วยที่ซื้อ)</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            {STOCK_UNIT_PRESETS.map(u => (
+              <button key={u} onClick={() => setForm(f => ({ ...f, stock_unit: u }))} style={{
+                padding: '5px 12px', borderRadius: 8, border: `1px solid ${form.stock_unit === u ? 'var(--primary)' : 'var(--border2)'}`,
+                background: form.stock_unit === u ? 'rgba(255,159,10,0.15)' : 'var(--surface2)',
+                color: form.stock_unit === u ? 'var(--primary)' : 'var(--dim)',
+                fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+              }}>{u}</button>
+            ))}
+          </div>
+          <input
+            value={form.stock_unit}
+            onChange={e => setForm(f => ({ ...f, stock_unit: e.target.value }))}
+            placeholder="หรือพิมพ์หน่วยเอง"
+            style={INPUT}
+          />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>จำนวนคงเหลือเริ่มต้น (ไม่บังคับ)</div>
+          <input
+            type="number" inputMode="decimal"
+            value={form.stock_qty}
+            onChange={e => setForm(f => ({ ...f, stock_qty: e.target.value }))}
+            placeholder="0"
+            style={INPUT}
+          />
+        </div>
+
+        <button onClick={handleAdd} disabled={saving} style={{
+          width: '100%', background: 'var(--primary)', color: '#000', border: 'none',
+          borderRadius: 12, padding: 13, fontSize: 14, fontWeight: 800,
+          cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1,
+        }}>
+          {saving ? '⏳ กำลังบันทึก...' : '+ เพิ่มวัตถุดิบ'}
+        </button>
+      </div>
+
+      {/* List */}
+      <div style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 10 }}>วัตถุดิบทั้งหมด ({ingredients.length})</div>
+      {ingredients.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '30px 0' }}>ยังไม่มีวัตถุดิบ — เพิ่มด้านบนได้เลย</div>
+      ) : ingredients.map(ing => (
+        <div key={ing.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{ing.name}</div>
+              {editingId === ing.id ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type="number" inputMode="decimal"
+                    value={editQty}
+                    onChange={e => setEditQty(e.target.value)}
+                    autoFocus
+                    style={{ ...INPUT, width: 90, padding: '6px 10px', fontSize: 13 }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--dim)' }}>{ing.stock_unit}</span>
+                  <button onClick={() => saveEditQty(ing)} style={{ background: 'var(--success)', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', color: '#000' }}>✓</button>
+                  <button onClick={() => setEditingId(null)} style={{ background: 'var(--surface2)', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--dim)' }}>✕</button>
+                </div>
+              ) : (
+                <div onClick={() => startEditQty(ing)} style={{ fontSize: 13, color: (ing.stock_qty ?? 0) <= 0 ? 'var(--danger)' : 'var(--dim)', cursor: 'pointer' }}>
+                  คงเหลือ: <span style={{ fontWeight: 700 }}>{ing.stock_qty ?? 0}</span> {ing.stock_unit} <span style={{ fontSize: 11, color: 'var(--primary)' }}>✏️ แก้ไข</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+              <button onClick={() => toggleTrackStock(ing)} style={{
+                fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
+                border: `1px solid ${ing.track_stock ? 'var(--success)' : 'var(--border2)'}`,
+                background: ing.track_stock ? 'rgba(50,215,75,0.15)' : 'var(--surface2)',
+                color: ing.track_stock ? 'var(--success)' : 'var(--dim)',
+              }}>
+                {ing.track_stock ? '✅ หักสต็อก' : '⏸️ ไม่หัก'}
+              </button>
+              <button onClick={() => handleDelete(ing)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 12 }}>ลบ</button>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

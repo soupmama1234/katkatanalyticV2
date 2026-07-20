@@ -28,6 +28,19 @@ export function useData() {
     return all
   }, [])
 
+  const syncStockDeductions = useCallback(async (ordersData) => {
+    const pending = ordersData.filter(o =>
+      !o.stock_deducted &&
+      (o.status === 'settled' || o.status === 'accepted')
+    )
+    for (const order of pending) {
+      const { error } = await supabase.rpc('deduct_stock_for_order', { p_order_id: order.id })
+      if (error) {
+        console.warn('stock sync failed for order', order.id, error)
+      }
+    }
+  }, [])
+
   const fetchAll = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -39,7 +52,7 @@ export function useData() {
         supabase.from('other_income').select('*').order('date', { ascending: false }),
         supabase.from('recipes').select('*').order('menu_name'),
         supabase.from('business_notes').select('*').order('note_date', { ascending: false }),
-        supabase.from('closed_days').select('*').order('date', { ascending: false }), // ← เพิ่ม
+        supabase.from('closed_days').select('*').order('date', { ascending: false }),
       ])
       setAllOrders(ordersData)
       setProducts(pR.data || [])
@@ -47,13 +60,16 @@ export function useData() {
       setIncome(iR.data || [])
       setRecipes(rR.data || [])
       setActionNotes(aN.data || [])
-      setClosedDays(cdR.data || [])  // ← เพิ่ม
+      setClosedDays(cdR.data || [])
+
+      // catch-up: หัก stock ให้ order ที่ยังไม่ได้หัก (ทำหลัง set state เสร็จ ไม่ block UI)
+      syncStockDeductions(ordersData)
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [fetchOrders])
+  }, [fetchOrders, syncStockDeductions])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
