@@ -29,7 +29,10 @@ export function useData() {
   }, [])
 
   const syncStockDeductions = useCallback(async (ordersData) => {
-    const pending = ordersData.filter(o => o.is_settled !== undefined && !o.stock_deducted && o.status !== 'pending_customer')
+    const pending = ordersData.filter(o =>
+  !o.stock_deducted &&
+  (o.status === 'settled' || o.status === 'accepted')
+)
     for (const order of pending) {
       try {
         await supabase.rpc('deduct_stock_for_order', { p_order_id: order.id })
