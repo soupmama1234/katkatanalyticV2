@@ -112,7 +112,6 @@ function RecipeList({ recipes, setRecipes, products, expenses, notify, confirm }
   const byProduct = useMemo(() => {
     const map = {}
     recipes.forEach(r => {
-      if (!r.product_id) return
       if (!map[r.product_id]) map[r.product_id] = []
       map[r.product_id].push(r)
     })
