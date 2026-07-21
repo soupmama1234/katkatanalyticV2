@@ -810,7 +810,7 @@ function ExpenseList({ expenses, setExpenses, notify, confirm }) {
     })
     .eq('id', editId)
     if (error) return notify('บันทึกไม่สำเร็จ: ' + error.message, 'error')
-    setExpenses(prev => prev.map(e => e.id === editId ? { ...e, ...editData, amount: parseFloat(editData.amount), quantity: parseFloat(editData.quantity) || null } : e))
+    setExpenses(prev => prev.map(e => e.id === editId ? { ...e, ...editData, amount: parseFloat(editData.amount), quantity: parseFloat(editData.quantity) || null, price_per_unit: parseFloat(editData.price_per_unit) || null } : e))
     setEditId(null)
   }
 
