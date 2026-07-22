@@ -60,7 +60,7 @@ function parseGrabText(text) {
   if (gp > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP Grab', amount: gp, date, sync_key: `grab:${date}:gp` });
   if (ads > 0) rows.push({ platform: 'grab', category: 'Ads Platform', item: 'Ads Grab', amount: ads, date, sync_key: `grab:${date}:ads` });
   if (subsidy > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'GP ไทยช่วยไทย Grab', amount: subsidy, date, sync_key: `grab:${date}:gp_subsidy` });
-  if (promo > 0) rows.push({ platform: 'grab', category: 'ส่วนลด', item: 'โปรโมชั่นร้าน Grab', amount: promo, date, sync_key: `grab:${date}:promo` });
+  if (promo > 0) rows.push({ platform: 'grab', category: 'GP Platform', item: 'โปรโมชั่นร้าน Grab', amount: promo, date, sync_key: `grab:${date}:promo` });
 
   return { rows, date };
 }
