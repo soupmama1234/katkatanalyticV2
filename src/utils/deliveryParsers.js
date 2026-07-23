@@ -102,17 +102,20 @@ function parseShopeeHtml(text) {
   const gpMatch  = text.match(/ค่าธรรมเนียม \(GP\)[\s|]*฿([\d.]+)/);
   const gpVatMatch = text.match(/ยอดภาษีมูลค่าเพิ่มค่าธรรมเนียม[\s|]*฿([\d.]+)/);
   const adsMatch = text.match(/ยอดรวมค่าบริการ Ads Package[\s|]*฿([\d.]+)/);
+  const foodSubsidyMatch = text.match(/เงินอุดหนุนค่าอาหารจากร้านค้า[\s|]*฿([\d.]+)/); // ← เพิ่มใหม่
 
   if (!periodMatch) return { error: 'ไม่พบช่วงวันที่รายงาน', raw: text.slice(0, 500) };
 
   const [, periodStart, periodEnd] = periodMatch;
   const gp = (gpMatch ? parseFloat(gpMatch[1]) : 0) + (gpVatMatch ? parseFloat(gpVatMatch[1]) : 0);
   const ads = adsMatch ? parseFloat(adsMatch[1]) : 0;
+  const foodSubsidy = foodSubsidyMatch ? parseFloat(foodSubsidyMatch[1]) : 0; // ← เพิ่มใหม่
 
   const periodKey = `${periodStart}_${periodEnd}`;
   const rows = [];
   if (gp > 0) rows.push({ platform: 'shopee', category: 'GP Platform', item: 'GP ShopeeFood', amount: gp, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd, sync_key: `shopee:${periodKey}:gp` });
   if (ads > 0) rows.push({ platform: 'shopee', category: 'Ads Platform', item: 'Ads ShopeeFood', amount: ads, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd, sync_key: `shopee:${periodKey}:ads` });
+  if (foodSubsidy > 0) rows.push({ platform: 'shopee', category: 'GP Platform', item: 'เงินอุดหนุนอาหาร ShopeeFood', amount: foodSubsidy, date: periodEnd, report_period_start: periodStart, report_period_end: periodEnd, sync_key: `shopee:${periodKey}:food_subsidy` }); // ← เพิ่มใหม่
 
   return { rows, periodStart, periodEnd };
 }
