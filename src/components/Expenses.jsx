@@ -69,6 +69,9 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
   const [stockQtyPerPurchase, setStockQtyPerPurchase] = useState('')
   const [showNewIngredient, setShowNewIngredient] = useState(false)
   const [newIngredientUnit, setNewIngredientUnit] = useState('')
+  const [editingSelectedIngredient, setEditingSelectedIngredient] = useState(false)
+  const [editIngName, setEditIngName] = useState('')
+  const [editIngUnit, setEditIngUnit] = useState('')
 
   useEffect(() => {
     supabase.from('ingredients').select('*').order('name').then(({ data }) => setIngredients(data || []))
@@ -92,6 +95,23 @@ function ExpenseForm({ expenses, setExpenses, notify }) {
       notify(`✅ สร้างวัตถุดิบ "${data.name}" แล้ว`)
     } catch (e) { notify('สร้างไม่สำเร็จ: ' + e.message, 'error') }
   }
+
+  const saveEditIngredient = async () => {
+  if (!editIngName.trim() || !editIngUnit.trim()) return notify('กรุณากรอกให้ครบ', 'warning')
+  try {
+    const { error } = await supabase.from('ingredients')
+      .update({ name: editIngName.trim(), stock_unit: editIngUnit.trim() })
+      .eq('id', selectedIngredient.id)
+    if (error) throw error
+    const updated = { ...selectedIngredient, name: editIngName.trim(), stock_unit: editIngUnit.trim() }
+    setSelectedIngredient(updated)
+    setIngredients(prev => prev.map(i => i.id === updated.id ? updated : i))
+    setEditingSelectedIngredient(false)
+    notify('แก้ไขวัตถุดิบเรียบร้อย')
+  } catch (e) {
+    notify('บันทึกไม่สำเร็จ: ' + e.message, 'error')
+  }
+}
 
   const itemHistory   = useMemo(() => [...new Set(expenses.map(e => e.item).filter(Boolean))], [expenses])
   const vendorHistory = useMemo(() => [...new Set([...VENDORS, ...expenses.map(e => e.vendor).filter(Boolean)])], [expenses])
@@ -610,10 +630,25 @@ format: [{"item":"ชื่อสินค้า","quantity":จำนวน,"un
             </div>
             {selectedIngredient ? (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>✅ {selectedIngredient.name} ({selectedIngredient.stock_unit})</span>
-                  <button onClick={() => { setSelectedIngredient(null); setStockQtyPerPurchase('') }} style={{ background: 'none', border: 'none', color: 'var(--dim)', fontSize: 12, cursor: 'pointer' }}>เปลี่ยน</button>
-                </div>
+                {editingSelectedIngredient ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                    <input value={editIngName} onChange={e => setEditIngName(e.target.value)} placeholder="ชื่อวัตถุดิบ" style={{ ...INPUT, padding: '6px 10px', fontSize: 13 }} autoFocus />
+                    <input value={editIngUnit} onChange={e => setEditIngUnit(e.target.value)} placeholder="หน่วยนับสต็อก" style={{ ...INPUT, padding: '6px 10px', fontSize: 13 }} />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={saveEditIngredient} style={{ flex: 1, background: 'var(--success)', border: 'none', borderRadius: 6, padding: '6px', fontSize: 11, fontWeight: 700, cursor: 'pointer', color: '#000' }}>✓ บันทึก</button>
+                      <button onClick={() => setEditingSelectedIngredient(false)} style={{ flex: 1, background: 'var(--surface2)', border: 'none', borderRadius: 6, padding: '6px', fontSize: 11, cursor: 'pointer', color: 'var(--dim)' }}>ยกเลิก</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>
+                      ✅ {selectedIngredient.name} ({selectedIngredient.stock_unit})
+                      <button onClick={() => { setEditingSelectedIngredient(true); setEditIngName(selectedIngredient.name); setEditIngUnit(selectedIngredient.stock_unit) }}
+                        style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: 11, cursor: 'pointer', marginLeft: 6 }}>✏️</button>
+                    </span>
+                    <button onClick={() => { setSelectedIngredient(null); setStockQtyPerPurchase('') }} style={{ background: 'none', border: 'none', color: 'var(--dim)', fontSize: 12, cursor: 'pointer' }}>เปลี่ยน</button>
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6 }}>
                   1 {form.unit || 'หน่วยที่ซื้อ'} = กี่ {selectedIngredient.stock_unit}?
                   {form.unit === selectedIngredient.stock_unit && <span style={{ color: 'var(--primary)' }}> (หน่วยเดียวกัน ใส่ 1)</span>}
