@@ -385,6 +385,9 @@ function IngredientManager({ notify, confirm }) {
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [editQty, setEditQty] = useState('')
+  const [editingNameId, setEditingNameId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editUnit, setEditUnit] = useState('')
 
   const fetchIngredients = async () => {
     setLoading(true)
@@ -445,6 +448,28 @@ function IngredientManager({ notify, confirm }) {
       setIngredients(prev => prev.map(i => i.id === ing.id ? { ...i, stock_qty: val } : i))
       setEditingId(null)
       notify('ปรับสต็อกเรียบร้อย')
+    } catch (e) {
+      notify('บันทึกไม่สำเร็จ: ' + e.message, 'error')
+    }
+  }
+
+  const startEditName = (ing) => {
+    setEditingNameId(ing.id)
+    setEditName(ing.name)
+    setEditUnit(ing.stock_unit || '')
+  }
+
+  const saveEditName = async (ing) => {
+    if (!editName.trim()) return notify('กรุณาใส่ชื่อวัตถุดิบ', 'warning')
+    if (!editUnit.trim()) return notify('กรุณาใส่หน่วยนับสต็อก', 'warning')
+    try {
+      const { error } = await supabase.from('ingredients')
+        .update({ name: editName.trim(), stock_unit: editUnit.trim() })
+        .eq('id', ing.id)
+      if (error) throw error
+      setIngredients(prev => prev.map(i => i.id === ing.id ? { ...i, name: editName.trim(), stock_unit: editUnit.trim() } : i))
+      setEditingNameId(null)
+      notify('แก้ไขชื่อวัตถุดิบเรียบร้อย')
     } catch (e) {
       notify('บันทึกไม่สำเร็จ: ' + e.message, 'error')
     }
@@ -531,7 +556,23 @@ function IngredientManager({ notify, confirm }) {
         <div key={ing.id} style={{ background: 'var(--surface)', borderRadius: 14, padding: '12px 14px', marginBottom: 8, border: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{ing.name}</div>
+              {editingNameId === ing.id ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="ชื่อวัตถุดิบ"
+                    style={{ ...INPUT, padding: '6px 10px', fontSize: 13 }} autoFocus />
+                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)} placeholder="หน่วยนับสต็อก"
+                    style={{ ...INPUT, padding: '6px 10px', fontSize: 13 }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => saveEditName(ing)} style={{ flex: 1, background: 'var(--success)', border: 'none', borderRadius: 6, padding: '6px', fontSize: 11, fontWeight: 700, cursor: 'pointer', color: '#000' }}>✓ บันทึก</button>
+                    <button onClick={() => setEditingNameId(null)} style={{ flex: 1, background: 'var(--surface2)', border: 'none', borderRadius: 6, padding: '6px', fontSize: 11, cursor: 'pointer', color: 'var(--dim)' }}>ยกเลิก</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {ing.name}
+                  <button onClick={() => startEditName(ing)} style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: 11, cursor: 'pointer' }}>✏️</button>
+                </div>
+              )}
               {editingId === ing.id ? (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input
