@@ -36,15 +36,17 @@ function parseGrabText(text) {
   const genericAdjustment = hasGenericAdjustment ? numbers[i++] : '0.00';
   const subsidyAdj = hasSubsidyAdj ? numbers[i++] : '0.00';
 
-  const dateMatch = text.match(/(\d{1,2})\s+(กรกฎาคม|มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s+(\d{4})/);
+  // ตัดสระ/วรรณยุกต์ (รวม PUA) ก่อนเทียบชื่อเดือน — กันเคส ตุ/ปุ/ฎ ที่ font เข้ารหัสแปลก
+const stripMarks = (s) => s.replace(/[\uF700-\uF7FF\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g, '');
+const MONTH_KEYS = { 'มกราค':1, 'กมภาพนธ':2, 'มนาค':3, 'เมษายน':4, 'พฤษภาค':5, 'มถนายน':6, 'กรกฎาค':7, 'สงหาค':8, 'กนยายน':9, 'ตลาค':10, 'พฤศจกายน':11, 'ธนวาค':12 };
+const dateMatch = stripMarks(text).match(new RegExp(`(\\d{1,2})\\s*(${Object.keys(MONTH_KEYS).join('|')})ม?\\s*(\\d{4})`));
 
-  const THAI_MONTHS = { 'มกราคม':1,'กุมภาพันธ์':2,'มีนาคม':3,'เมษายน':4,'พฤษภาคม':5,'มิถุนายน':6,'กรกฎาคม':7,'สิงหาคม':8,'กันยายน':9,'ตุลาคม':10,'พฤศจิกายน':11,'ธันวาคม':12 };
-  let date = null;
-  if (dateMatch) {
-    const [, day, monthName, year] = dateMatch;
-    const month = String(THAI_MONTHS[monthName]).padStart(2, '0');
-    date = `${year}-${month}-${String(day).padStart(2, '0')}`;
-  }
+let date = null;
+if (dateMatch) {
+  const [, day, monthKey, year] = dateMatch;
+  const month = String(MONTH_KEYS[monthKey]).padStart(2, '0');
+  date = `${year}-${month}-${String(day).padStart(2, '0')}`;
+}
   if (!date) return { error: 'ไม่พบวันที่ในอีเมล', raw: text.slice(0, 500) };
 
   const round2 = (n) => Math.round(n * 100) / 100;
