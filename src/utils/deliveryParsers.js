@@ -38,7 +38,7 @@ if (triple && Math.abs(parseFloat(triple[1]) + parseFloat(triple[2]) - parseFloa
   i++; // ยอดรายการ — ไม่ใช้ในการคำนวณ
   i++; // VAT — ไม่ใช้ในการคำนวณ
   i++; // ค่าบริการร้าน — ไม่ใช้ในการคำนวณ
-  const promo = round2(Math.abs(parseFloat(promotion)) + Math.abs(parseFloat(subsidyPromo)));
+  const promotion = numbers[i++]; // โปรโมชั่นร้าน
   const commission = numbers[i++];
   const commissionExtra = hasCommissionExtra ? numbers[i++] : '0.00';
   const marketing = hasAds ? numbers[i++] : '0.00';
@@ -62,7 +62,7 @@ if (dateMatch) {
   const round2 = (n) => Math.round(n * 100) / 100;
   const gp = round2(Math.abs(parseFloat(commission)) + Math.abs(parseFloat(commissionExtra)));
   const ads = round2(Math.abs(parseFloat(marketing)));
-  const promo = round2(Math.abs(parseFloat(promotion)));
+  const promo = round2(Math.abs(parseFloat(promotion)) + Math.abs(parseFloat(subsidyPromo)));
   // รวมค่า "ปรับรายได้" ทั้ง 2 แบบ โดยคงเครื่องหมายบวก/ลบเดิมก่อนรวม (สำคัญ! ถ้า Math.abs ทีละตัวก่อนจะผิด
   // เช่น +48.00 กับ -76.37 ต้องรวมเป็น -28.37 ก่อน แล้วค่อย Math.abs ทีเดียว ไม่ใช่บวกค่า absolute กัน)
   const netSubsidyAdjustment = parseFloat(genericAdjustment) + parseFloat(subsidyAdj);
