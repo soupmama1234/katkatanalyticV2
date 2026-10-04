@@ -24,11 +24,21 @@ function parseGrabText(text) {
   const hasGenericAdjustment = adjustmentCount > (hasSubsidyAdj ? 1 : 0);
 
   const numbers = blobMatch[0].match(/-?\d+\.\d{2}/g);
+  // โปรโมชั่นร้านในตาราง "รายได้จากไทยช่วยไทยพลัส" — ไม่ได้รวมอยู่ในแถวสรุปด้านบน
+// ตารางนี้มี 3 ค่า: ยอดรายการ, โปรโมชันร้าน, รายรับทั้งหมด (เช่น 504.00 -13.00 491.00)
+let subsidyPromo = '0.00';
+const blobEnd = blobMatch.index + blobMatch[0].length;
+const triple = afterHeader.slice(blobEnd, blobEnd + 400)
+  .match(/(-?\d+\.\d{2})\s*(-?\d+\.\d{2})\s*(-?\d+\.\d{2})/);
+// เช็ค ยอด + โปรโม = รายรับ กันไปจับแถวอื่นผิดตอนวันที่ไม่มีออเดอร์ไทยช่วยไทย
+if (triple && Math.abs(parseFloat(triple[1]) + parseFloat(triple[2]) - parseFloat(triple[3])) < 0.01) {
+  subsidyPromo = triple[2];
+}
   let i = 0;
   i++; // ยอดรายการ — ไม่ใช้ในการคำนวณ
   i++; // VAT — ไม่ใช้ในการคำนวณ
   i++; // ค่าบริการร้าน — ไม่ใช้ในการคำนวณ
-  const promo = numbers[i++];
+  const promo = round2(Math.abs(parseFloat(promotion)) + Math.abs(parseFloat(subsidyPromo)));
   const commission = numbers[i++];
   const commissionExtra = hasCommissionExtra ? numbers[i++] : '0.00';
   const marketing = hasAds ? numbers[i++] : '0.00';
