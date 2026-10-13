@@ -2,29 +2,45 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabase'
 
 export function useData() {
-  const [allOrders, setAllOrders]   = useState([])
-  const [products, setProducts]     = useState([])
-  const [expenses, setExpenses]     = useState([])
-  const [income, setIncome]         = useState([])
-  const [recipes, setRecipes]       = useState([])
+  const [allOrders, setAllOrders] = useState([])
+  const [products, setProducts] = useState([])
+  const [expenses, setExpenses] = useState([])
+  const [income, setIncome] = useState([])
+  const [recipes, setRecipes] = useState([])
   const [actionNotes, setActionNotes] = useState([])
-  const [closedDays, setClosedDays] = useState([])  // ← เพิ่ม
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
+  const [closedDays, setClosedDays] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   const fetchOrders = useCallback(async () => {
-    const PAGE = 1000; let all = [], from = 0
-    while (true) {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*, order_items(*)')
-        .order('created_at', { ascending: false })
-        .range(from, from + PAGE - 1)
-      if (error) throw error
-      all = [...all, ...(data || [])]
-      if (!data || data.length < PAGE) break
-      from += PAGE
+    const PAGE_SIZE = 1000
+    const PARALLEL_PAGES = 4
+    const all = []
+    let pageStart = 0
+    let hasMore = true
+
+    // Fetch up to four 1,000-row pages at once instead of waiting for
+    // each page request to finish before starting the next one.
+    while (hasMore) {
+      const starts = Array.from(
+        { length: PARALLEL_PAGES },
+        (_, i) => pageStart + i * PAGE_SIZE
+      )
+      const pages = await Promise.all(starts.map(async (from) => {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('created_at', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1)
+        if (error) throw error
+        return data || []
+      }))
+
+      for (const page of pages) all.push(...page)
+      hasMore = pages.every(page => page.length === PAGE_SIZE)
+      pageStart += PARALLEL_PAGES * PAGE_SIZE
     }
+
     return all
   }, [])
 
@@ -35,9 +51,7 @@ export function useData() {
     )
     for (const order of pending) {
       const { error } = await supabase.rpc('deduct_stock_for_order', { p_order_id: order.id })
-      if (error) {
-        console.warn('stock sync failed for order', order.id, error)
-      }
+      if (error) console.warn('stock sync failed for order', order.id, error)
     }
   }, [])
 
@@ -54,6 +68,10 @@ export function useData() {
         supabase.from('business_notes').select('*').order('note_date', { ascending: false }),
         supabase.from('closed_days').select('*').order('date', { ascending: false }),
       ])
+      for (const result of [pR, eR, iR, rR, aN, cdR]) {
+        if (result.error) throw result.error
+      }
+
       setAllOrders(ordersData)
       setProducts(pR.data || [])
       setExpenses(eR.data || [])
@@ -62,10 +80,10 @@ export function useData() {
       setActionNotes(aN.data || [])
       setClosedDays(cdR.data || [])
 
-      // catch-up: หัก stock ให้ order ที่ยังไม่ได้หัก (ทำหลัง set state เสร็จ ไม่ block UI)
+      // Background catch-up; does not delay rendering the dashboard.
       syncStockDeductions(ordersData)
     } catch (e) {
-      setError(e.message)
+      setError(e.message || 'โหลดข้อมูลไม่สำเร็จ')
     } finally {
       setLoading(false)
     }
@@ -80,7 +98,7 @@ export function useData() {
     income, setIncome,
     recipes, setRecipes,
     actionNotes, setActionNotes,
-    closedDays, setClosedDays,  // ← เพิ่ม
+    closedDays, setClosedDays,
     loading, error,
     refetch: fetchAll,
   }
