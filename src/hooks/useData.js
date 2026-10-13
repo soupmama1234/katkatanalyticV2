@@ -14,33 +14,38 @@ export function useData() {
 
   const fetchOrders = useCallback(async () => {
     const PAGE_SIZE = 1000
-    const PARALLEL_PAGES = 4
-    const all = []
-    let pageStart = 0
-    let hasMore = true
 
-    // Fetch up to four 1,000-row pages at once instead of waiting for
-    // each page request to finish before starting the next one.
-    while (hasMore) {
-      const starts = Array.from(
-        { length: PARALLEL_PAGES },
-        (_, i) => pageStart + i * PAGE_SIZE
-      )
-      const pages = await Promise.all(starts.map(async (from) => {
-        const { data, error } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .order('created_at', { ascending: false })
-          .range(from, from + PAGE_SIZE - 1)
-        if (error) throw error
-        return data || []
-      }))
+    // Get the exact row count with the first page, then fetch only the
+    // pages that actually exist. This avoids requesting three empty pages
+    // when the total is not a multiple of PAGE_SIZE.
+    const { data: firstPage, error: firstError, count } = await supabase
+      .from('orders')
+      .select('*, order_items(*)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(0, PAGE_SIZE - 1)
 
-      for (const page of pages) all.push(...page)
-      hasMore = pages.every(page => page.length === PAGE_SIZE)
-      pageStart += PARALLEL_PAGES * PAGE_SIZE
+    if (firstError) throw firstError
+    const all = firstPage || []
+    const total = count ?? all.length
+
+    if (total <= PAGE_SIZE) return all
+
+    const pageStarts = []
+    for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) {
+      pageStarts.push(from)
     }
 
+    const pages = await Promise.all(pageStarts.map(async (from) => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .order('created_at', { ascending: false })
+        .range(from, Math.min(from + PAGE_SIZE - 1, total - 1))
+      if (error) throw error
+      return data || []
+    }))
+
+    for (const page of pages) all.push(...page)
     return all
   }, [])
 
@@ -80,7 +85,7 @@ export function useData() {
       setActionNotes(aN.data || [])
       setClosedDays(cdR.data || [])
 
-      // Background catch-up; does not delay rendering the dashboard.
+      // Keep the existing inventory catch-up behavior unchanged.
       syncStockDeductions(ordersData)
     } catch (e) {
       setError(e.message || 'โหลดข้อมูลไม่สำเร็จ')
