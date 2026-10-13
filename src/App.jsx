@@ -90,7 +90,7 @@ export default function App() {
     recipes,     setRecipes,
     actionNotes, setActionNotes,
     closedDays,  setClosedDays,  
-    loading, error, refetch,
+    loading, historyLoading, historyError, error, refetch,
   } = useData()
 
   // ── Auth guards ──────────────────────────────────────────────────────────
@@ -162,6 +162,16 @@ export default function App() {
         </div>
       </div>
       <div style={CONTENT} key={activeTab} className="fade-in">
+        {historyLoading && (
+          <div style={{ fontSize: 11, color: 'var(--dim)', padding: '0 0 10px' }}>
+            กำลังโหลดประวัติย้อนหลัง — ตัวเลขของช่วงเวลาอื่นอาจยังไม่ครบชั่วคราว
+          </div>
+        )}
+        {historyError && (
+          <button onClick={refetch} style={{ display: 'block', width: '100%', marginBottom: 10, padding: 10, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--primary)', fontFamily: 'inherit', fontSize: 11 }}>
+            โหลดประวัติย้อนหลังไม่สำเร็จ · แตะเพื่อโหลดใหม่
+          </button>
+        )}
         {renderPage()}
       </div>
 
