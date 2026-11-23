@@ -10,20 +10,33 @@ function parseGrabText(text) {
   if (headerIdx === -1) return { error: 'ไม่พบหัวตารางสรุปข้อมูล', raw: text.slice(0, 500) };
   const afterHeader = text.slice(headerIdx);
 
-  // ตัวเลขติดกันไม่มีช่องว่าง เช่น 468.000.000.000.00-150.23-7.50-10.700.00-30.14269.430.00
-  const blobMatch = afterHeader.match(/(?:\s*-?\d+\.\d{2}){8,}/);
-  if (!blobMatch) return { error: 'ไม่พบแถวตัวเลขในตารางสรุปข้อมูล', raw: text.slice(0, 500) };
+  
+  // หาแถวตัวเลขในตารางสรุปข้อมูล โดยอ่านทีละบรรทัด
+  // รองรับทั้ง 1539.00 และ 1,539.00
+  const amountPattern = /-?\d[\d,]*\.\d{2}/g;
 
-  const headerBlock = normalize(afterHeader.slice(0, blobMatch.index));
-  const hasCommissionExtra = headerBlock.includes(normalize('ค่าคอมมิชชั่นเพิ่มเติม'));
-  const hasAds = headerBlock.includes(normalize('ค่าธรรมเนียมการตลาด'));
-  // "การปรับรายได้" มี 2 แบบที่ขึ้นต้นเหมือนกัน: ตัวเดี่ยว (ปรับรายได้ทั่วไป เช่น refund) กับ
-  // "การปรับรายได้(ค่าคอมมิชชันไทยช่วยไทยพลัส)*" — แยกด้วยว่ามีวงเล็บต่อท้ายทันทีไหม
-  const hasSubsidyAdj = headerBlock.includes(normalize('การปรับรายได้') + '(');
-  const adjustmentCount = (headerBlock.match(new RegExp(normalize('การปรับรายได้'), 'g')) || []).length;
-  const hasGenericAdjustment = adjustmentCount > (hasSubsidyAdj ? 1 : 0);
+  const summaryLine = afterHeader
+    .split(/\r?\n/)
+    .find(line => (line.match(amountPattern) || []).length >= 8);
 
-  const numbers = blobMatch[0].match(/-?\d+\.\d{2}/g);
+  if (!summaryLine) {
+    return {
+      error: 'ไม่พบแถวตัวเลขในตารางสรุปข้อมูล',
+      raw: afterHeader.slice(0, 1000)
+    };
+  }
+
+  // เก็บรูปแบบเดิมเพื่อให้โค้ดส่วนถัดไปใช้งานได้
+  const blobMatch = {
+    0: summaryLine,
+    index: afterHeader.indexOf(summaryLine)
+  };
+
+  // ลบ comma ก่อนแปลงเป็นตัวเลข
+  const numbers = summaryLine
+    .match(amountPattern)
+    .map(n => n.replace(/,/g, ''));
+
   // โปรโมชั่นร้านในตาราง "รายได้จากไทยช่วยไทยพลัส" — ไม่ได้รวมอยู่ในแถวสรุปด้านบน
 // ตารางนี้มี 3 ค่า: ยอดรายการ, โปรโมชันร้าน, รายรับทั้งหมด (เช่น 504.00 -13.00 491.00)
 let subsidyPromo = '0.00';
