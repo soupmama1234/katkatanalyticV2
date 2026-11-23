@@ -11,7 +11,7 @@ function parseGrabText(text) {
   const afterHeader = text.slice(headerIdx);
 
   // ตัวเลขติดกันไม่มีช่องว่าง เช่น 468.000.000.000.00-150.23-7.50-10.700.00-30.14269.430.00
-  const blobMatch = afterHeader.match(/(?:-?\d+\.\d{2}){8,}/);
+  const blobMatch = afterHeader.match(/(?:\s*-?\d+\.\d{2}){8,}/);
   if (!blobMatch) return { error: 'ไม่พบแถวตัวเลขในตารางสรุปข้อมูล', raw: text.slice(0, 500) };
 
   const headerBlock = normalize(afterHeader.slice(0, blobMatch.index));
