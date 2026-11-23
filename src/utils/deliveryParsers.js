@@ -8,36 +8,63 @@ function parseGrabText(text) {
 
   const headerIdx = text.search(/รายการ\s*VAT/);
   if (headerIdx === -1) return { error: 'ไม่พบหัวตารางสรุปข้อมูล', raw: text.slice(0, 500) };
-  const afterHeader = text.slice(headerIdx);
+  const afterHeader = text.slice(headerIdx); 
+// รองรับตัวเลขทั้งแบบ 1539.00 และ 1,539.00
+const amountPattern = /-?\d[\d,]*\.\d{2}/g;
 
-  
-  // หาแถวตัวเลขในตารางสรุปข้อมูล โดยอ่านทีละบรรทัด
-  // รองรับทั้ง 1539.00 และ 1,539.00
-  const amountPattern = /-?\d[\d,]*\.\d{2}/g;
+// หาแถวที่มีตัวเลขอย่างน้อย 8 ค่า
+const lines = afterHeader.split(/\r?\n/);
 
-  const summaryLine = afterHeader
-    .split(/\r?\n/)
-    .find(line => (line.match(amountPattern) || []).length >= 8);
+const summaryLine = lines.find(line => {
+  const matches = line.match(amountPattern);
+  return matches && matches.length >= 8;
+});
 
-  if (!summaryLine) {
-    return {
-      error: 'ไม่พบแถวตัวเลขในตารางสรุปข้อมูล',
-      raw: afterHeader.slice(0, 1000)
-    };
-  }
-
-  // เก็บรูปแบบเดิมเพื่อให้โค้ดส่วนถัดไปใช้งานได้
-  const blobMatch = {
-    0: summaryLine,
-    index: afterHeader.indexOf(summaryLine)
+if (!summaryLine) {
+  return {
+    error: 'ไม่พบแถวตัวเลขในตารางสรุปข้อมูล',
+    raw: afterHeader.slice(0, 1000)
   };
+}
 
-  // ลบ comma ก่อนแปลงเป็นตัวเลข
-  const numbers = summaryLine
-    .match(amountPattern)
-    .map(n => n.replace(/,/g, ''));
+// ตำแหน่งแถวตัวเลข
+const summaryIndex = afterHeader.indexOf(summaryLine);
 
-  // โปรโมชั่นร้านในตาราง "รายได้จากไทยช่วยไทยพลัส" — ไม่ได้รวมอยู่ในแถวสรุปด้านบน
+// รักษาตัวแปรเดิมที่โค้ดส่วนถัดไปต้องใช้
+const blobMatch = {
+  0: summaryLine,
+  index: summaryIndex
+};
+
+// อ่านหัวตารางเพื่อกำหนดตำแหน่งคอลัมน์
+const headerBlock = normalize(afterHeader.slice(0, summaryIndex));
+
+const hasCommissionExtra = headerBlock.includes(
+  normalize('ค่าคอมมิชชั่นเพิ่มเติม')
+);
+
+const hasAds = headerBlock.includes(
+  normalize('ค่าธรรมเนียมการตลาด')
+);
+
+const hasSubsidyAdj = headerBlock.includes(
+  normalize('การปรับรายได้') + '('
+);
+
+const adjustmentCount = (
+  headerBlock.match(
+    new RegExp(normalize('การปรับรายได้'), 'g')
+  ) || []
+).length;
+
+const hasGenericAdjustment =
+  adjustmentCount > (hasSubsidyAdj ? 1 : 0);
+
+// แปลงตัวเลขและลบ comma หลักพัน
+const numbers = summaryLine
+  .match(amountPattern)
+  .map(n => n.replace(/,/g, ''));
+ // โปรโมชั่นร้านในตาราง "รายได้จากไทยช่วยไทยพลัส" — ไม่ได้รวมอยู่ในแถวสรุปด้านบน
 // ตารางนี้มี 3 ค่า: ยอดรายการ, โปรโมชันร้าน, รายรับทั้งหมด (เช่น 504.00 -13.00 491.00)
 let subsidyPromo = '0.00';
 const blobEnd = blobMatch.index + blobMatch[0].length;
